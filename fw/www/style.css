@@ -1,0 +1,301 @@
+/* =============================================================================
+   roundGauge — две темы оформления, переключаются атрибутом data-theme на <html>
+   (см. theme.js). Все правила ниже ссылаются только на переменные из этих двух
+   блоков - переключение темы не требует ничего менять за пределами этого блока.
+
+   Перенесено из wifi-serv; правила, нужные только страницам PDM16 (каналы,
+   графики токов, тепловая шкала, строка показаний), убраны.
+
+   dark (по умолчанию)  — тёмно-серая с жёлтым акцентом
+   light                — мягкий бело-голубой с ярким sky-blue акцентом и глубоким
+                          тёмно-синим текстом
+   ============================================================================= */
+
+:root,
+:root[data-theme="dark"] {
+    --rg-bg: #16181b;
+    --rg-bg-elevated: #1f2226;
+    --rg-bg-elevated-2: #262a2f;
+    --rg-border: #34383f;
+    --rg-text: #eceef0;
+    --rg-text-muted: #8b939c;
+    --rg-accent: #ffc933;
+    --rg-accent-dark: #cf9f1a;
+    --rg-accent-soft: rgba(255, 201, 51, 0.12);
+    --rg-danger: #ff5c5c;
+    --rg-success: #35d07f;
+    --rg-warning: #ff9f40;
+}
+
+:root[data-theme="light"] {
+    --rg-bg: #f8fafc;
+    --rg-bg-elevated: #ffffff;
+    --rg-bg-elevated-2: #eef2f8;
+    --rg-border: #dbe3ef;
+    --rg-text: #0f172a;
+    --rg-text-muted: #64748b;
+    --rg-accent: #0ea5e9;
+    --rg-accent-dark: #0284c7;
+    --rg-accent-soft: rgba(14, 165, 233, 0.14);
+    --rg-danger: #dc2626;
+    --rg-success: #16a34a;
+    --rg-warning: #d97706;
+}
+
+body {
+    background: var(--rg-bg);
+    color: var(--rg-text);
+}
+
+/* Navbar */
+.navbar {
+    background: var(--rg-bg-elevated);
+    border-bottom: 1px solid var(--rg-border);
+    padding: 0.9rem 0;
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--rg-text) !important;
+}
+
+.navbar-brand i {
+    color: var(--rg-accent);
+}
+
+/* .navbar .container-fluid переносит группу кнопок на новую строку на узких
+   экранах (flex-wrap: wrap из Bootstrap) - на своей строке она одна, и
+   justify-content: space-between для одного элемента эквивалентен flex-start,
+   поэтому группа "прилипает" к левому краю под заголовком. margin-left: auto
+   прижимает её к правому краю в обоих случаях (перенос/без переноса). */
+.navbar .container-fluid>.d-flex {
+    margin-left: auto;
+}
+
+/* Cards */
+.card {
+    background: var(--rg-bg-elevated);
+    border: 1px solid var(--rg-border);
+    border-radius: 12px;
+    box-shadow: none;
+    color: var(--rg-text);
+}
+
+.card-header {
+    background: var(--rg-bg-elevated);
+    border-bottom: 1px solid var(--rg-border);
+    color: var(--rg-text);
+    padding: 1rem 1.25rem;
+}
+
+.card-body {
+    padding: 1.25rem;
+}
+
+.text-muted {
+    color: var(--rg-text-muted) !important;
+}
+
+/* Вкладки */
+.nav-tabs {
+    border-bottom: 1px solid var(--rg-border);
+}
+
+.nav-tabs .nav-link {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--rg-text-muted);
+    border-radius: 0;
+    font-weight: 600;
+}
+
+.nav-tabs .nav-link:hover {
+    color: var(--rg-text);
+}
+
+.nav-tabs .nav-link.active {
+    background-color: transparent;
+    color: var(--rg-accent);
+    border-bottom-color: var(--rg-accent);
+}
+
+/* Списки */
+.list-group-item {
+    background: var(--rg-bg-elevated);
+    border-color: var(--rg-border);
+    color: var(--rg-text);
+    transition: background-color 0.2s ease;
+}
+
+.text-fault {
+    color: var(--rg-danger);
+}
+
+.text-warning-hint {
+    color: var(--rg-warning);
+}
+
+.text-success {
+    color: var(--rg-success) !important;
+}
+
+/* Поля ввода */
+.form-control,
+.form-select {
+    background-color: var(--rg-bg);
+    border: 1px solid var(--rg-border);
+    color: var(--rg-text);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--rg-bg);
+    border-color: var(--rg-accent);
+    color: var(--rg-text);
+    box-shadow: 0 0 0 0.2rem var(--rg-accent-soft);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+    background-color: var(--rg-bg-elevated-2);
+    color: var(--rg-text-muted);
+    opacity: 0.6;
+}
+
+.form-control.is-invalid {
+    border-color: var(--rg-danger);
+    background-image: none; /* убираем стандартную иконку Bootstrap - не сочетается с тёмной темой */
+}
+
+.form-control.is-invalid:focus {
+    border-color: var(--rg-danger);
+    box-shadow: 0 0 0 0.2rem rgba(255, 92, 92, 0.2);
+}
+
+.form-label {
+    color: var(--rg-text-muted);
+}
+
+/* Увеличенные переключатели (width: 3em инлайн-стилем) - отступ под
+   переключатель и его смещение увеличены пропорционально, иначе подпись
+   налезает на сам переключатель */
+.form-switch {
+    padding-left: 3.5em;
+}
+
+.form-switch .form-check-input {
+    margin-left: -3.5em;
+}
+
+.form-switch .form-check-input {
+    background-color: var(--rg-bg-elevated-2);
+    border-color: var(--rg-border);
+}
+
+.form-switch .form-check-input:checked {
+    background-color: var(--rg-accent);
+    border-color: var(--rg-accent);
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%2316181b'/%3e%3c/svg%3e");
+}
+
+.form-check-input:focus {
+    border-color: var(--rg-accent);
+    box-shadow: 0 0 0 0.2rem var(--rg-accent-soft);
+}
+
+/* Кнопки */
+.btn {
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-accent {
+    background: var(--rg-accent);
+    border: none;
+    color: #1a1a1a;
+}
+
+.btn-accent:hover {
+    background: var(--rg-accent-dark);
+    color: #1a1a1a;
+}
+
+.btn-outline-secondary {
+    border: 1px solid var(--rg-border);
+    color: var(--rg-text-muted);
+}
+
+.btn-outline-secondary:hover {
+    background: var(--rg-bg-elevated-2);
+    border-color: var(--rg-border);
+    color: var(--rg-text);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Окно ввода пароля (кнопка-замочек в шапке) */
+.unlock-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 4.5rem;
+    z-index: 1050;
+}
+
+.unlock-modal {
+    background: var(--rg-bg-elevated);
+    border: 1px solid var(--rg-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    width: 90%;
+    max-width: 320px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* Алерты */
+.alert {
+    border-radius: 10px;
+    border: 1px solid var(--rg-border);
+}
+
+.alert-success {
+    background: rgba(53, 208, 127, 0.12);
+    color: var(--rg-success);
+}
+
+.alert-danger {
+    background: rgba(255, 92, 92, 0.12);
+    color: var(--rg-danger);
+}
+
+.alert-warning {
+    background: var(--rg-accent-soft);
+    color: var(--rg-accent);
+}
+
+/* Скроллбар (WebKit) */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--rg-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rg-bg-elevated-2);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rg-border);
+}

@@ -1,0 +1,13 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_lcd_st7701:
+    version: "^2.0.2"
+  espressif/esp_io_expander_tca9554:
+    version: "^2.0.3"
+  # Официального компонента для CST820 нет; у него тот же адрес и раскладка
+  # регистров касания, что у CST816S.
+  espressif/esp_lcd_touch_cst816s:
+    version: "^1.1.2"
+  # 3-wire SPI для init-последовательности ST7701: SCL/SDA на GPIO, CS на TCA9554.
+  espressif/esp_lcd_panel_io_additions:
+    version: "^1.0.1"

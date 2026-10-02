@@ -1,0 +1,5 @@
+## IDF Component Manager Manifest File
+dependencies:
+  # В ESP-IDF v6 cJSON уехал из дерева в менеджер компонентов.
+  espressif/cjson:
+    version: "^1.7.19"

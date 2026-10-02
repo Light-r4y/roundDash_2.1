@@ -1,0 +1,4 @@
+# cmd.exe неправильно разбирает .bat с переводами строк LF, а bash не
+# выполняет .sh с CRLF - фиксируем окончания строк независимо от core.autocrlf.
+*.bat text eol=crlf
+*.sh  text eol=lf

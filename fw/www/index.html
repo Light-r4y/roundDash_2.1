@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/index.js"></script>
+</head>
+
+<body>
+    <div x-data="mainPage()" x-effect="document.title = t('title_main')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <span class="navbar-brand mb-0 h1">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </span>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <a href="/ota" class="btn btn-sm btn-accent">
+                        <i class="fas fa-cloud-upload-alt me-1"></i><span x-text="t('nav_update')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''"
+                    :placeholder="t('auth_unlock_password')" @input="unlockError = ''"
+                    @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-4">
+            <!-- TODO: настройки CAN, таблица сигналов, экраны, медиа, Wi-Fi, пароль -->
+            <div class="card">
+                <div class="card-body text-muted" x-text="t('placeholder')"></div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
