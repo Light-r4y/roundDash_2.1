@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Media</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/lvbin.js"></script>
+    <script src="/media.js"></script>
+    <style>
+        .file-row { display: flex; align-items: center; gap: .75rem; padding: .4rem 0; border-top: 1px solid var(--rg-border); }
+        .file-row:first-child { border-top: 0; }
+        /* Шахматка под миниатюрой: видна прозрачность картинок */
+        .thumb { width: 88px; height: 88px; flex: none; display: flex; align-items: center; justify-content: center;
+                 border-radius: 8px; border: 1px solid var(--rg-border);
+                 background: repeating-conic-gradient(#808080 0% 25%, #b0b0b0 0% 50%) 50% / 14px 14px; }
+        .thumb img { max-width: 100%; max-height: 100%; }
+        .thumb.font { background: var(--rg-bg-elevated-2); font-size: 1.8rem; color: var(--rg-text-muted); }
+    </style>
+</head>
+
+<body>
+    <div x-data="mediaPage()" x-effect="document.title = t('title_media')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <a href="/can.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-plug me-1"></i><span x-text="t('nav_can')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-3 mb-5" style="max-width:860px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <!-- Занятое место -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span x-text="t('media_storage')"></span>
+                        <span><span x-text="fmtSize(media.used)"></span> / <span x-text="fmtSize(media.total)"></span></span>
+                    </div>
+                    <div class="progress" style="height:6px">
+                        <div class="progress-bar" :style="'width:' + usedPct + '%'"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Загрузка -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-2"><i class="fas fa-upload me-2"></i><span x-text="t('media_new')"></span></h6>
+                    <input type="file" class="form-control form-control-sm mb-2" x-ref="fileInput"
+                        accept="image/*,.bin,.fnt" @change="pickFile($event)">
+                    <!-- x-show на обёртке: d-flex у Bootstrap с !important перебил бы x-show -->
+                    <div x-show="uploadFile"><div class="d-flex flex-wrap align-items-center gap-3">
+                        <div class="thumb" :class="uploadKind === 'font' ? 'font' : ''">
+                            <template x-if="uploadKind === 'font'"><i class="fas fa-font"></i></template>
+                            <template x-if="uploadKind !== 'font' && uploadThumb"><img :src="uploadThumb" alt=""></template>
+                        </div>
+                        <div class="d-flex flex-column gap-2">
+                            <input class="form-control form-control-sm" style="max-width:16em" maxlength="31"
+                                x-model="uploadName">
+                            <div>
+                                <button type="button" class="btn btn-sm btn-accent"
+                                    :disabled="busy || controlsLocked()" @click="upload()">
+                                    <i class="fas fa-upload me-1"></i><span x-text="t('ed_upload')"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div></div>
+                    <div class="small text-muted mt-2" x-text="uploadInfo"></div>
+                    <div class="form-text" x-text="t('ed_upload_hint')"></div>
+                </div>
+            </div>
+
+            <!-- Картинки -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-2"><i class="fas fa-image me-2"></i><span x-text="t('media_images')"></span>
+                        <span class="small text-muted" x-text="'(' + images.length + ')'"></span></h6>
+                    <template x-for="f in images" :key="f.name">
+                        <div class="file-row">
+                            <div class="thumb">
+                                <template x-if="thumbs[f.name]"><img :src="thumbs[f.name]" alt=""></template>
+                                <template x-if="!thumbs[f.name]"><i class="fas fa-image text-muted"></i></template>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="text-break" x-text="f.name"></div>
+                                <div class="small text-muted" x-text="fmtSize(f.size)"></div>
+                            </div>
+                            <span class="badge bg-secondary" x-show="isUsed(f.name)" x-text="t('ed_in_use')"></span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                :disabled="controlsLocked()" @click="removeMedia(f.name)"><i
+                                    class="fas fa-trash"></i></button>
+                        </div>
+                    </template>
+                    <div class="small text-muted" x-show="loaded && !images.length" x-text="t('ed_media_empty')"></div>
+                </div>
+            </div>
+
+            <!-- Шрифты -->
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="mb-2"><i class="fas fa-font me-2"></i><span x-text="t('media_fonts')"></span>
+                        <span class="small text-muted" x-text="'(' + fonts.length + ')'"></span></h6>
+                    <template x-for="f in fonts" :key="f.name">
+                        <div class="file-row">
+                            <div class="thumb font"><i class="fas fa-font"></i></div>
+                            <div class="flex-grow-1">
+                                <div class="text-break" x-text="f.name"></div>
+                                <div class="small text-muted" x-text="fmtSize(f.size)"></div>
+                            </div>
+                            <span class="badge bg-secondary" x-show="isUsed(f.name)" x-text="t('ed_in_use')"></span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                :disabled="controlsLocked()" @click="removeMedia(f.name)"><i
+                                    class="fas fa-trash"></i></button>
+                        </div>
+                    </template>
+                    <div class="small text-muted" x-show="loaded && !fonts.length" x-text="t('media_fonts_empty')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

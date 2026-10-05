@@ -16,10 +16,10 @@
 #define RG_LVGL_TASK_CORE 1
 
 // ui_task: переносит значения сигналов в виджеты под lvgl_port_lock().
-#define RG_UI_TASK_STACK 4096
+#define RG_UI_TASK_STACK 8192
 #define RG_UI_TASK_PRIORITY 3
 #define RG_UI_TASK_CORE 1
-#define RG_UI_TASK_PERIOD_MS 33
+#define RG_UI_TASK_PERIOD_MS 16
 
 #define RG_CAN_TASK_STACK 4096
 #define RG_CAN_TASK_PRIORITY 8
@@ -30,11 +30,23 @@
 #define RG_BUTTONS_TASK_CORE 0
 #define RG_BUTTONS_TICK_MS 10
 
+// touch_task: свайпы по экрану. Выше CAN-ISR не лезет, но выше httpd, чтобы жест не ждал
+// веб-сервер. Тач читается по прерыванию контроллера, пока палец на экране - ещё и
+// сам каждые RG_TOUCH_POLL_MS (прерывание при подъёме пальца может не прийти).
+#define RG_TOUCH_TASK_STACK 3072
+#define RG_TOUCH_TASK_PRIORITY 6
+#define RG_TOUCH_TASK_CORE 0
+#define RG_TOUCH_POLL_MS 20
+// Свайп: горизонтальное смещение от точки касания не меньше MIN_PX, заметно больше
+// вертикального, за не более MAX_MS. Срабатывает сразу, не дожидаясь подъёма пальца.
+#define RG_TOUCH_SWIPE_MIN_PX 60
+#define RG_TOUCH_SWIPE_MAX_MS 800
+
 // webcfg_task: подъём точки доступа и HTTP-сервера по запросу.
 #define RG_WEBCFG_TASK_STACK 4096
 #define RG_WEBCFG_TASK_PRIORITY 2
 #define RG_WEBCFG_TASK_CORE 0
-#define RG_WEBCFG_TICK_MS 500
+#define RG_WEBCFG_TICK_MS 100
 
 // Задачу httpd создаёт esp_http_server, сюда — только её параметры.
 #define RG_HTTPD_STACK 8192
@@ -44,12 +56,37 @@
 // ------------------------------------------------------------------
 // Экран
 // ------------------------------------------------------------------
-// Яркость подсветки после старта, %. Регулировки пока нет.
+// Яркость подсветки по умолчанию, %; меняется в вебе и хранится в настройках.
 #define RG_LCD_BL_DEFAULT_PCT 100
+// Ниже экран практически не видно, поэтому веб и NVS ниже не пускают.
+#define RG_LCD_BL_MIN_PCT 5
+// Сколько мс висит короткое сообщение на экране (roundGauge_ui_toast()).
+#define RG_TOAST_MS 3000
+
+// Экран приборки (tasks/ui, common/config/layout.h)
+#define RG_UI_MAX_SCREENS 4
+// Сколько мс после запуска точки доступа на экране висит карточка с именем сети, паролем
+// и адресом; потом остаётся только значок Wi-Fi с числом подключённых.
+#define RG_AP_CARD_MS 10000
+// Экран с тач-панелью (1) или без (0). Задаётся при сборке: idf.py -D RG_HAS_TOUCH=0 build
+// (fw/CMakeLists.txt); здесь только значение на случай, если define не пришёл.
+#ifndef RG_HAS_TOUCH
+#define RG_HAS_TOUCH 1
+#endif
+// Размер шкалы/кольца на круглом экране, px.
+#define RG_UI_DIAL_SIZE 440
+// Пока отлаживаем: счётчик кадров и время отрисовки сверху экрана (0 - выключить).
+#define RG_UI_SHOW_FPS 1
+
+// Раскладка экранов: JSON одним blob'ом в том же пространстве NVS, что настройки.
+#define RG_LAYOUT_NVS_KEY "layout"
+#define RG_LAYOUT_JSON_MAX 12288
 
 // ------------------------------------------------------------------
 // Кнопки
 // ------------------------------------------------------------------
+// Сколько тактов подряд кнопка должна быть нажата, чтобы это считалось нажатием.
+#define RG_BTN_DEBOUNCE_TICKS 3
 #define RG_BTN_COUNT 2
 // Удержание кнопки 1 поднимает точку доступа. Гаснет она только с перезагрузкой.
 #define RG_BTN_AP_HOLD_MS 2000
@@ -57,12 +94,25 @@
 // ------------------------------------------------------------------
 // CAN
 // ------------------------------------------------------------------
-// Кадры из ISR идут в can_task через очередь.
-// TODO: подобрать длину по реальной загрузке шины.
-#define RG_CAN_RX_QUEUE_LEN 32
+// Кадры из ISR идут в can_task через очередь. Длину (64) ещё надо сверить с реальной
+// загрузкой шины: счётчик потерянных кадров виден на странице CAN.
+#define RG_CAN_RX_QUEUE_LEN 64
 
 // Значения по умолчанию, пока в NVS пусто: новая приборка ничего не передаёт в
 // шину, пока её не настроят.
+// Таблица привязки сигналов к кадрам: JSON одним blob'ом (common/config/can_map.h).
+#define RG_CAN_MAP_NVS_KEY "can_map"
+#define RG_CAN_MAP_JSON_MAX 4096
+
+// Сниффер для веба: сколько разных ID помнит плата, и сколько мс после последнего
+// запроса страницы кадры чужих ID ещё принимаются (без сниффера ISR отбрасывает всё,
+// чего нет в таблице привязок).
+#define RG_CAN_SNIFFER_MAX 64
+#define RG_CAN_SNIFFER_ACTIVE_MS 3000
+
+// Через сколько мс после bus-off узел восстанавливается.
+#define RG_CAN_BUSOFF_RECOVERY_MS 1000
+
 #define RG_CAN_BITRATE_DEFAULT 500000
 #define RG_CAN_LISTEN_ONLY_DEFAULT true
 
@@ -85,6 +135,8 @@
 #define RG_WWW_BASE_PATH "/www"
 #define RG_MEDIA_PARTITION "media"
 #define RG_MEDIA_BASE_PATH "/media"
+// Предел одного загружаемого файла: фон 480x480 с прозрачностью (ARGB8888) - 922 КБ.
+#define RG_MEDIA_MAX_FILE 1000000
 
 // ------------------------------------------------------------------
 // Настройки в NVS (common/config/settings.c)
@@ -100,4 +152,10 @@
 // ------------------------------------------------------------------
 #define RG_AUTH_NVS_KEY "auth_hash"          // SHA-256(salt + пароль), пусто/отсутствует = защита выключена
 #define RG_AUTH_SALT "roundGauge-auth-v1-"   // фиксированная "соль", вкомпилирована в прошивку
+#define RG_AUTH_PASSWORD_MIN_LEN 4
+#define RG_AUTH_PASSWORD_MAX_LEN 64
+// Забытый пароль: удержание кнопки 1 столько мс снимает его (точка доступа поднимется
+// раньше, на RG_BTN_AP_HOLD_MS). При включении кнопку держать нельзя - это GPIO0 (BOOT),
+// с ним на сбросе ROM-загрузчик уходит в режим прошивки.
+#define RG_AUTH_RESET_HOLD_MS 10000
 #define RG_AUTH_REALM "roundGauge"           // realm для Basic Auth (что видит браузер в диалоге)

@@ -1,0 +1,31 @@
+#pragma once
+
+// Встроенная раскладка: таблица сигналов и по экрану каждого типа. Без картинок -
+// всё рисуется примитивами LVGL, так что приборка работает и при пустом разделе media.
+static const char RG_LAYOUT_DEFAULT_JSON[] =
+    "{\"version\":2,\"signals\":["
+    "{\"name\":\"rpm\",\"title\":\"RPM\",\"unit\":\"x1000\",\"min\":0,\"max\":8000,\"decimals\":0,"
+    "\"zones\":[{\"from\":6500,\"to\":8000,\"color\":\"#ff3030\"}]},"
+    "{\"name\":\"coolant\",\"title\":\"COOLANT\",\"unit\":\"C\",\"min\":50,\"max\":130,\"decimals\":0,"
+    "\"zones\":[{\"from\":50,\"to\":70,\"color\":\"#4080ff\"},{\"from\":70,\"to\":105,\"color\":\"#00c060\"},"
+    "{\"from\":105,\"to\":130,\"color\":\"#ff3030\"}]},"
+    "{\"name\":\"speed\",\"title\":\"SPEED\",\"unit\":\"km/h\",\"min\":0,\"max\":240,\"decimals\":0}"
+    "],\"screens\":["
+    "{\"type\":\"dial\",\"signal\":\"rpm\",\"label_div\":1000,\"ticks\":41,\"major_every\":5,"
+    "\"needle_color\":\"#ff8000\","
+    "\"markers\":[{\"value\":7000,\"color\":\"#ff3030\"}],"
+    "\"widgets\":["
+    "{\"type\":\"text\",\"text\":\"RPM\",\"y\":-90},"
+    "{\"type\":\"value\",\"y\":60},"
+    "{\"type\":\"text\",\"text\":\"x1000\",\"y\":110}]},"
+    "{\"type\":\"ring\",\"signal\":\"coolant\",\"color\":\"#00c0ff\","
+    "\"widgets\":["
+    "{\"type\":\"text\",\"text\":\"COOLANT\",\"y\":-70},"
+    "{\"type\":\"value\",\"zone_color\":true},"
+    "{\"type\":\"text\",\"text\":\"C\",\"y\":60}]},"
+    "{\"type\":\"number\",\"signal\":\"speed\","
+    "\"widgets\":["
+    "{\"type\":\"text\",\"text\":\"SPEED\",\"y\":-90},"
+    "{\"type\":\"value\"},"
+    "{\"type\":\"text\",\"text\":\"km/h\",\"y\":60}]}"
+    "]}";

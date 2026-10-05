@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Editor</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/lvbin.js"></script>
+    <script src="/gauge-render.js"></script>
+    <script src="/editor.js"></script>
+    <style>
+        /* Заголовок сворачиваемой секции */
+        .sec-head { color: var(--rg-text); font-weight: 600; font-size: .9rem; text-decoration: none; }
+        .sec-head:hover { color: var(--rg-accent); }
+        .sec-head .fa-chevron-down, .sec-head .fa-chevron-right { width: 1em; font-size: .75rem; }
+        .sec-box { border-top: 1px solid var(--rg-border); padding-top: .5rem; margin-top: .5rem; }
+    </style>
+</head>
+
+<body>
+    <div x-data="editorPage()" x-effect="document.title = t('title_editor')" @input="changed()" @change="changed()">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/media.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-image me-1"></i><span x-text="t('nav_media')"></span>
+                    </a>
+                    <a href="/can.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-plug me-1"></i><span x-text="t('nav_can')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid mt-3 mb-5 px-3">
+            <!-- Панель действий -->
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <button type="button" class="btn btn-accent" :disabled="busy || tooBig || controlsLocked() || !loaded"
+                    @click="apply()">
+                    <i class="fas fa-paper-plane me-1"></i><span x-text="t('ed_apply')"></span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" @click="reloadFromDevice()">
+                    <i class="fas fa-rotate me-1"></i><span x-text="t('ed_reload')"></span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" :disabled="controlsLocked()"
+                    @click="resetDefault()">
+                    <i class="fas fa-eraser me-1"></i><span x-text="t('ed_reset')"></span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" @click="toggleJson()">
+                    <i class="fas fa-code me-1"></i>JSON
+                </button>
+                <span class="badge" :class="dirty ? 'bg-warning text-dark' : 'bg-secondary'"
+                    x-text="dirty ? t('ed_unsaved') : t('ed_saved')"></span>
+                <span class="small" :class="tooBig ? 'text-fault' : 'text-muted'">
+                    <span x-text="jsonSize"></span> / <span x-text="limits.json"></span> B
+                </span>
+                <span class="small text-fault" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></span>
+            </div>
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+
+            <!-- JSON -->
+            <div class="card mb-3" x-show="showJson">
+                <div class="card-body">
+                    <textarea class="form-control font-monospace" rows="12" x-model="jsonText"
+                        @input.stop></textarea>
+                    <button type="button" class="btn btn-sm btn-accent mt-2" @click="applyJsonText()"
+                        x-text="t('ed_json_load')"></button>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <!-- Предпросмотр -->
+                <div class="col-lg-5">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <canvas x-ref="preview" width="480" height="480"
+                                style="width:100%;max-width:440px;border-radius:50%;background:#000;touch-action:none;cursor:grab"
+                                @pointerdown="dragStart($event)" @pointermove="dragMove($event)"
+                                @pointerup="dragEnd()" @pointercancel="dragEnd()"></canvas>
+                            <div class="mt-3 text-start" x-show="screen">
+                                <div class="form-check form-switch mb-1">
+                                    <input class="form-check-input" type="checkbox" id="sweep" x-model="sweep" @input.stop
+                                        @change.stop>
+                                    <label class="form-check-label" for="sweep" x-text="t('ed_sweep')"></label>
+                                </div>
+                                <template x-if="!sweep">
+                                    <div>
+                                        <template x-for="s in screenSignals()" :key="s.name">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="small text-muted text-truncate" style="width:7em"
+                                                    x-text="s.title || s.name"></span>
+                                                <input type="range" class="form-range" :min="s.min" :max="s.max"
+                                                    :step="(s.max - s.min) / 500" :value="sliderValue(s)"
+                                                    @input.stop="setManual(s, $event)" @change.stop>
+                                                <span class="small text-muted text-nowrap" style="min-width:4em"
+                                                    x-text="Number(sliderValue(s)).toFixed(s.decimals)"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                <div class="small text-muted mt-1" x-text="t('ed_drag_hint')"></div>
+                                <div class="small text-muted" x-text="t('ed_preview_note')"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-7">
+                    <!-- Экраны -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                <template x-for="(s, i) in layout.screens" :key="i">
+                                    <button type="button" class="btn btn-sm"
+                                        :class="i === sel ? 'btn-accent' : 'btn-outline-secondary'"
+                                        @click="selectScreen(i)" x-text="screenName(s, i)"></button>
+                                </template>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <div class="btn-group btn-group-sm">
+                                    <template x-for="t_ in ['dial', 'ring', 'number']" :key="t_">
+                                        <button type="button" class="btn btn-outline-secondary" @click="addScreen(t_)"
+                                            :disabled="layout.screens.length >= limits.screens"><i
+                                                class="fas fa-plus me-1"></i><span x-text="typeLabel(t_)"></span></button>
+                                    </template>
+                                </div>
+                                <div class="btn-group btn-group-sm" x-show="screen">
+                                    <button type="button" class="btn btn-outline-secondary" :disabled="sel === 0"
+                                        @click="moveScreen(-1)" :title="t('ed_move_left')"><i
+                                            class="fas fa-arrow-left"></i></button>
+                                    <button type="button" class="btn btn-outline-secondary"
+                                        :disabled="sel >= layout.screens.length - 1" @click="moveScreen(1)"
+                                        :title="t('ed_move_right')"><i class="fas fa-arrow-right"></i></button>
+                                    <button type="button" class="btn btn-outline-secondary"
+                                        :disabled="layout.screens.length <= 1" @click="removeScreen()"
+                                        :title="t('ed_remove')"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Основной виджет: главное всегда на виду, тонкое - в секциях -->
+                    <div class="card mb-3" x-show="screen">
+                        <div class="card-body">
+                            <h6 class="mb-2"><i class="fas fa-gauge-high me-2"></i><span x-text="t('ed_main')"></span>
+                            </h6>
+                            <template x-if="screen">
+                                <div>
+                                    <div class="row g-2">
+                                        <div class="col-6 col-md-4">
+                                            <label class="form-label small" x-text="t('ed_type')"></label>
+                                            <select class="form-select form-select-sm" x-model="screen.type">
+                                                <option value="dial" x-text="t('ed_type_dial')"></option>
+                                                <option value="ring" x-text="t('ed_type_ring')"></option>
+                                                <option value="number" x-text="t('ed_type_number')"></option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6 col-md-4">
+                                            <label class="form-label small" x-text="t('ed_signal')"></label>
+                                            <select class="form-select form-select-sm" x-model="screen.signal">
+                                                <template x-if="!hasSignal(screen.signal)">
+                                                    <option :value="screen.signal" selected
+                                                        x-text="screen.signal + ' ⚠'"></option>
+                                                </template>
+                                                <template x-for="n in sigNames()" :key="n">
+                                                    <option :value="n" x-text="n" :selected="n === screen.signal">
+                                                    </option>
+                                                </template>
+                                            </select>
+                                            <div class="form-text text-fault" x-show="!hasSignal(screen.signal)"
+                                                x-text="t('ed_sig_missing')"></div>
+                                        </div>
+                                        <div class="col-12 col-md-4">
+                                            <label class="form-label small" x-text="t('ed_bg_image')"></label>
+                                            <select class="form-select form-select-sm" x-model="screen.bg_image">
+                                                <option value="" x-text="t('ed_none')"></option>
+                                                <template x-for="f in imageOptions()" :key="f.name">
+                                                    <option :value="f.name" x-text="f.name"
+                                                        :selected="f.name === screen.bg_image"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="col-4 col-md-3">
+                                            <label class="form-label small" x-text="t('ed_bg_color')"></label>
+                                            <input type="color" class="form-control form-control-color w-100"
+                                                x-model="screen.bg_color">
+                                        </div>
+                                        <div class="col-4 col-md-3">
+                                            <label class="form-label small" x-text="t('ed_color')"></label>
+                                            <input type="color" class="form-control form-control-color w-100"
+                                                x-model="screen.color">
+                                        </div>
+                                        <div class="col-4 col-md-3" x-show="screen.type === 'dial'">
+                                            <label class="form-label small" x-text="t('ed_text_color')"></label>
+                                            <input type="color" class="form-control form-control-color w-100"
+                                                x-model="screen.text_color">
+                                        </div>
+                                    </div>
+
+                                    <!-- Шкала и стрелка / кольцо -->
+                                    <template x-if="screen.type !== 'number'">
+                                        <div class="sec-box">
+                                            <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
+                                                @click="toggleSec('scale')">
+                                                <i class="fas" :class="isOpen('scale') ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                                <span x-text="screen.type === 'dial' ? t('ed_sec_scale_dial') : t('ed_sec_scale_ring')"></span>
+                                            </button>
+                                            <div class="mt-2" x-show="isOpen('scale')">
+                                                <template x-if="screen.type === 'dial'">
+                                                    <div class="row g-2">
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_angle')"></label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.angle" @input="numberInput(screen, 'angle', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_rotation')"></label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.rotation"
+                                                                @input="numberInput(screen, 'rotation', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-2">
+                                                            <label class="form-label small" x-text="t('ed_ticks')"></label>
+                                                            <input type="number" min="2" max="101"
+                                                                class="form-control form-control-sm" :value="screen.ticks"
+                                                                @input="numberInput(screen, 'ticks', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-2">
+                                                            <label class="form-label small" x-text="t('ed_major')"></label>
+                                                            <input type="number" min="1" class="form-control form-control-sm"
+                                                                :value="screen.major_every"
+                                                                @input="numberInput(screen, 'major_every', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-2">
+                                                            <label class="form-label small" x-text="t('ed_label_div')"></label>
+                                                            <input type="number" min="0.001" step="any"
+                                                                class="form-control form-control-sm" :value="screen.label_div"
+                                                                @input="numberInput(screen, 'label_div', $event)">
+                                                        </div>
+                                                        <div class="col-4 col-md-3">
+                                                            <label class="form-label small"
+                                                                x-text="t('ed_needle_color')"></label>
+                                                            <input type="color" class="form-control form-control-color w-100"
+                                                                x-model="screen.needle_color">
+                                                        </div>
+                                                        <div class="col-4 col-md-3">
+                                                            <label class="form-label small"
+                                                                x-text="t('ed_needle_width')"></label>
+                                                            <input type="number" min="1" max="40"
+                                                                class="form-control form-control-sm"
+                                                                :value="screen.needle_width"
+                                                                @input="numberInput(screen, 'needle_width', $event)">
+                                                        </div>
+                                                        <div class="col-12 col-md-6">
+                                                            <label class="form-label small"
+                                                                x-text="t('ed_needle_image')"></label>
+                                                            <select class="form-select form-select-sm"
+                                                                x-model="screen.needle_image">
+                                                                <option value="" x-text="t('ed_none')"></option>
+                                                                <template x-for="f in imageOptions()" :key="f.name">
+                                                                    <option :value="f.name" x-text="f.name"
+                                                                        :selected="f.name === screen.needle_image"></option>
+                                                                </template>
+                                                            </select>
+                                                            <div class="form-text" x-text="t('ed_needle_hint')"></div>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                                <template x-if="screen.type === 'ring'">
+                                                    <div class="row g-2">
+                                                        <div class="col-4">
+                                                            <label class="form-label small" x-text="t('ed_angle')"></label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.angle" @input="numberInput(screen, 'angle', $event)">
+                                                        </div>
+                                                        <div class="col-4">
+                                                            <label class="form-label small" x-text="t('ed_rotation')"></label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.rotation"
+                                                                @input="numberInput(screen, 'rotation', $event)">
+                                                        </div>
+                                                        <div class="col-4">
+                                                            <label class="form-label small" x-text="t('ed_ring_width')"></label>
+                                                            <input type="number" min="4" max="120"
+                                                                class="form-control form-control-sm"
+                                                                :value="screen.ring_width"
+                                                                @input="numberInput(screen, 'ring_width', $event)">
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <!-- Диапазон экрана, зоны и метки -->
+                                    <template x-if="screen.type !== 'number'">
+                                        <div class="sec-box">
+                                            <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
+                                                @click="toggleSec('ranges')">
+                                                <i class="fas" :class="isOpen('ranges') ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                                <span x-text="t('ed_sec_ranges')"></span>
+                                            </button>
+                                            <div class="mt-2" x-show="isOpen('ranges')">
+                                                <div class="form-check form-switch mb-2">
+                                                    <input class="form-check-input" type="checkbox" id="ownrange"
+                                                        x-model="screen.has_range" @change="toggleRange()">
+                                                    <label class="form-check-label" for="ownrange"
+                                                        x-text="t('ed_own_range')"></label>
+                                                </div>
+                                                <template x-if="screen.has_range">
+                                                    <div class="row g-2 mb-2">
+                                                        <div class="col-6">
+                                                            <label class="form-label small">min</label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.min" @input="numberInput(screen, 'min', $event)">
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <label class="form-label small">max</label>
+                                                            <input type="number" class="form-control form-control-sm"
+                                                                :value="screen.max" @input="numberInput(screen, 'max', $event)">
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                                    <strong class="small" x-text="t('ed_zones_screen')"></strong>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                        :disabled="screen.zones.length >= limits.zones" @click="addZone()">
+                                                        <i class="fas fa-plus"></i></button>
+                                                </div>
+                                                <div class="form-text mb-1" x-text="t('ed_zones_screen_hint')"></div>
+                                                <template x-for="(z, zi) in screen.zones" :key="zi">
+                                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                                        <span class="small text-muted" x-text="t('ed_from')"></span>
+                                                        <input type="number" class="form-control form-control-sm"
+                                                            :value="z.from" @input="numberInput(z, 'from', $event)">
+                                                        <span class="small text-muted" x-text="t('ed_to')"></span>
+                                                        <input type="number" class="form-control form-control-sm"
+                                                            :value="z.to" @input="numberInput(z, 'to', $event)">
+                                                        <input type="color" class="form-control form-control-color"
+                                                            x-model="z.color">
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                            @click="screen.zones.splice(zi, 1); changed()"><i
+                                                                class="fas fa-xmark"></i></button>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="screen.type === 'dial'">
+                                                    <div class="mt-2">
+                                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                                            <strong class="small" x-text="t('ed_markers')"></strong>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                                :disabled="screen.markers.length >= limits.markers"
+                                                                @click="addMarker()"><i class="fas fa-plus"></i></button>
+                                                        </div>
+                                                        <template x-for="(m, mi) in screen.markers" :key="mi">
+                                                            <div class="d-flex align-items-center gap-2 mb-1">
+                                                                <span class="small text-muted" x-text="t('ed_at')"></span>
+                                                                <input type="number" class="form-control form-control-sm"
+                                                                    :value="m.value" @input="numberInput(m, 'value', $event)">
+                                                                <input type="color" class="form-control form-control-color"
+                                                                    x-model="m.color">
+                                                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                                    @click="screen.markers.splice(mi, 1); changed()"><i
+                                                                        class="fas fa-xmark"></i></button>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Дополнительные виджеты -->
+                    <div class="card mb-3" x-show="screen">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <h6 class="mb-0"><i class="fas fa-shapes me-2"></i><span x-text="t('ed_widgets')"></span>
+                                    <span class="small text-muted"
+                                        x-text="'(' + (screen ? screen.widgets.length : 0) + '/' + limits.widgets + ')'"></span>
+                                </h6>
+                            </div>
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                <template x-for="t_ in ['value', 'text', 'image', 'indicator', 'bar', 'arc']" :key="t_">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        :disabled="!screen || screen.widgets.length >= limits.widgets"
+                                        @click="addWidget(t_)"><i class="fas fa-plus me-1"></i><span
+                                            x-text="t('ed_w_' + t_)"></span></button>
+                                </template>
+                            </div>
+                            <template x-if="screen">
+                                <div>
+                                    <template x-for="(w, wi) in screen.widgets" :key="wi">
+                                        <div class="d-flex align-items-center gap-1 mb-1">
+                                            <button type="button" class="btn btn-sm flex-grow-1 text-start text-truncate"
+                                                :class="wi === selW ? 'btn-accent' : 'btn-outline-secondary'"
+                                                @click="selW = wi" x-text="widgetLabel(w)"></button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                :disabled="wi === 0" @click="moveWidget(wi, -1)"><i
+                                                    class="fas fa-arrow-up"></i></button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                :disabled="wi >= screen.widgets.length - 1" @click="moveWidget(wi, 1)"><i
+                                                    class="fas fa-arrow-down"></i></button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                @click="removeWidget(wi)"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </template>
+                                    <div class="small text-muted" x-show="!screen.widgets.length"
+                                        x-text="t('ed_widgets_empty')"></div>
+                                </div>
+                            </template>
+
+                            <!-- Форма выбранного виджета: основное сверху, остальное в "Подробнее" -->
+                            <template x-if="widget">
+                                <div class="sec-box">
+                                    <div class="row g-2">
+                                        <div class="col-6 col-md-3">
+                                            <label class="form-label small">x</label>
+                                            <input type="number" class="form-control form-control-sm" :value="widget.x"
+                                                @input="numberInput(widget, 'x', $event)">
+                                        </div>
+                                        <div class="col-6 col-md-3">
+                                            <label class="form-label small">y</label>
+                                            <input type="number" class="form-control form-control-sm" :value="widget.y"
+                                                @input="numberInput(widget, 'y', $event)">
+                                        </div>
+
+                                        <template x-if="['value', 'indicator', 'bar', 'arc'].includes(widget.type)">
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small" x-text="t('ed_signal')"></label>
+                                                <select class="form-select form-select-sm" x-model="widget.signal">
+                                                    <option value="" x-text="t('ed_sig_screen')"
+                                                        :selected="!widget.signal"></option>
+                                                    <template x-for="n in sigNames()" :key="n">
+                                                        <option :value="n" x-text="n" :selected="n === widget.signal">
+                                                        </option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </template>
+
+                                        <template x-if="widget.type === 'value' || widget.type === 'text'">
+                                            <div class="col-12">
+                                                <div class="row g-2">
+                                                    <div class="col-6 col-md-4">
+                                                        <label class="form-label small" x-text="t('ed_font')"></label>
+                                                        <select class="form-select form-select-sm" x-model="widget.font">
+                                                            <template x-for="f in fontOptions()" :key="f.v">
+                                                                <option :value="f.v" x-text="f.l"
+                                                                    :selected="f.v === widget.font"></option>
+                                                            </template>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-6 col-md-3">
+                                                        <label class="form-label small" x-text="t('ed_color')"></label>
+                                                        <input type="color" class="form-control form-control-color w-100"
+                                                            x-model="widget.color">
+                                                    </div>
+                                                    <template x-if="widget.type === 'text'">
+                                                        <div class="col-12 col-md-5">
+                                                            <label class="form-label small" x-text="t('ed_text')"></label>
+                                                            <input class="form-control form-control-sm" maxlength="23"
+                                                                x-model="widget.text">
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+
+                                        <template x-if="widget.type === 'image' || widget.type === 'indicator'">
+                                            <div class="col-12 col-md-6">
+                                                <label class="form-label small" x-text="t('ed_image')"></label>
+                                                <select class="form-select form-select-sm" x-model="widget.image">
+                                                    <option value=""
+                                                        x-text="widget.type === 'indicator' ? t('ed_circle') : t('ed_none')"
+                                                        :selected="!widget.image"></option>
+                                                    <template x-for="f in imageOptions()" :key="f.name">
+                                                        <option :value="f.name" x-text="f.name"
+                                                            :selected="f.name === widget.image"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Подробнее (не у текста и картинки: у них всё на виду) -->
+                                    <template x-if="['value', 'indicator', 'bar', 'arc'].includes(widget.type)">
+                                        <div class="mt-2">
+                                            <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
+                                                @click="toggleSec('wmore')">
+                                                <i class="fas" :class="isOpen('wmore') ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                                <span x-text="t('ed_sec_more')"></span>
+                                            </button>
+                                            <div class="mt-2" x-show="isOpen('wmore')">
+                                                <div class="row g-2">
+                                                    <template x-if="widget.type === 'value'">
+                                                        <div class="col-12 col-md-5">
+                                                            <label class="form-label small"
+                                                                x-text="t('ed_decimals')"></label>
+                                                            <select class="form-select form-select-sm"
+                                                                x-model.number="widget.decimals">
+                                                                <option :value="-1" :selected="widget.decimals === -1"
+                                                                    x-text="t('ed_decimals_auto')"></option>
+                                                                <template x-for="d in [0, 1, 2, 3]" :key="d">
+                                                                    <option :value="d" x-text="d"
+                                                                        :selected="widget.decimals === d"></option>
+                                                                </template>
+                                                            </select>
+                                                        </div>
+                                                    </template>
+
+                                                    <template x-if="widget.type === 'indicator'">
+                                                        <div class="col-12">
+                                                            <div class="row g-2">
+                                                                <div class="col-4 col-md-2">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_when')"></label>
+                                                                    <select class="form-select form-select-sm"
+                                                                        x-model="widget.op">
+                                                                        <option value=">" :selected="widget.op === '>'">&gt;
+                                                                        </option>
+                                                                        <option value="<" :selected="widget.op === '<'">&lt;
+                                                                        </option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="col-4 col-md-3">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_threshold')"></label>
+                                                                    <input type="number" class="form-control form-control-sm"
+                                                                        :value="widget.threshold"
+                                                                        @input="numberInput(widget, 'threshold', $event)">
+                                                                </div>
+                                                                <div class="col-4 col-md-3">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_size')"></label>
+                                                                    <input type="number" min="1" max="480"
+                                                                        class="form-control form-control-sm" :value="widget.w"
+                                                                        @input="numberInput(widget, 'w', $event)">
+                                                                </div>
+                                                                <div class="col-6 col-md-2">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_color')"></label>
+                                                                    <input type="color"
+                                                                        class="form-control form-control-color w-100"
+                                                                        x-model="widget.color">
+                                                                </div>
+                                                                <div class="col-6 col-md-2 d-flex align-items-end">
+                                                                    <div class="form-check form-switch mb-2">
+                                                                        <input class="form-check-input" type="checkbox"
+                                                                            id="wblink" x-model="widget.blink">
+                                                                        <label class="form-check-label" for="wblink"
+                                                                            x-text="t('ed_blink')"></label>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+
+                                                    <template x-if="widget.type === 'bar' || widget.type === 'arc'">
+                                                        <div class="col-12">
+                                                            <div class="row g-2">
+                                                                <div class="col-6 col-md-3">
+                                                                    <label class="form-label small"
+                                                                        x-text="widget.type === 'bar' ? t('ed_width') : t('ed_size')"></label>
+                                                                    <input type="number" min="1" max="480"
+                                                                        class="form-control form-control-sm" :value="widget.w"
+                                                                        @input="numberInput(widget, 'w', $event)">
+                                                                </div>
+                                                                <template x-if="widget.type === 'bar'">
+                                                                    <div class="col-6 col-md-3">
+                                                                        <label class="form-label small"
+                                                                            x-text="t('ed_height')"></label>
+                                                                        <input type="number" min="1" max="480"
+                                                                            class="form-control form-control-sm"
+                                                                            :value="widget.h"
+                                                                            @input="numberInput(widget, 'h', $event)">
+                                                                    </div>
+                                                                </template>
+                                                                <template x-if="widget.type === 'arc'">
+                                                                    <div class="col-6 col-md-3">
+                                                                        <label class="form-label small"
+                                                                            x-text="t('ed_ring_width')"></label>
+                                                                        <input type="number" min="2" max="120"
+                                                                            class="form-control form-control-sm"
+                                                                            :value="widget.width"
+                                                                            @input="numberInput(widget, 'width', $event)">
+                                                                    </div>
+                                                                </template>
+                                                                <template x-if="widget.type === 'arc'">
+                                                                    <div class="col-6 col-md-3">
+                                                                        <label class="form-label small"
+                                                                            x-text="t('ed_angle')"></label>
+                                                                        <input type="number"
+                                                                            class="form-control form-control-sm"
+                                                                            :value="widget.angle"
+                                                                            @input="numberInput(widget, 'angle', $event)">
+                                                                    </div>
+                                                                </template>
+                                                                <template x-if="widget.type === 'arc'">
+                                                                    <div class="col-6 col-md-3">
+                                                                        <label class="form-label small"
+                                                                            x-text="t('ed_rotation')"></label>
+                                                                        <input type="number"
+                                                                            class="form-control form-control-sm"
+                                                                            :value="widget.rotation"
+                                                                            @input="numberInput(widget, 'rotation', $event)">
+                                                                    </div>
+                                                                </template>
+                                                                <div class="col-4 col-md-3">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_color')"></label>
+                                                                    <input type="color"
+                                                                        class="form-control form-control-color w-100"
+                                                                        x-model="widget.color">
+                                                                </div>
+                                                                <div class="col-4 col-md-3">
+                                                                    <label class="form-label small"
+                                                                        x-text="t('ed_bg_color')"></label>
+                                                                    <input type="color"
+                                                                        class="form-control form-control-color w-100"
+                                                                        x-model="widget.bg_color">
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+
+                                                    <template x-if="['value', 'bar', 'arc'].includes(widget.type)">
+                                                        <div class="col-12">
+                                                            <div class="form-check form-switch">
+                                                                <input class="form-check-input" type="checkbox" id="wzone"
+                                                                    x-model="widget.zone_color">
+                                                                <label class="form-check-label" for="wzone"
+                                                                    x-text="t('ed_zone_color')"></label>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Сигналы: тонкая настройка, по умолчанию свёрнуто -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
+                                @click="toggleSec('signals')">
+                                <i class="fas" :class="isOpen('signals') ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                <span><i class="fas fa-wave-square me-2"></i><span x-text="t('ed_signals')"></span>
+                                    <span class="small text-muted fw-normal"
+                                        x-text="'(' + layout.signals.length + '/' + limits.signals + ')'"></span></span>
+                            </button>
+                            <div class="mt-2" x-show="isOpen('signals')">
+                                <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                                    <div class="form-text" x-text="t('ed_signals_hint')"></div>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        :disabled="layout.signals.length >= limits.signals" @click="addSignal()"><i
+                                            class="fas fa-plus"></i></button>
+                                </div>
+                                <template x-for="(s, si) in layout.signals" :key="si">
+                                    <div class="border rounded p-2 mb-2" style="border-color:var(--rg-border) !important">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-6 col-md-3">
+                                                <label class="form-label small" x-text="t('ed_sig_name')"></label>
+                                                <input class="form-control form-control-sm" maxlength="15" :value="s.name"
+                                                    @change.stop="renameSignal(si, $event)" @input.stop>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <label class="form-label small" x-text="t('ed_title')"></label>
+                                                <input class="form-control form-control-sm" maxlength="23"
+                                                    x-model="s.title">
+                                            </div>
+                                            <div class="col-4 col-md-2">
+                                                <label class="form-label small" x-text="t('ed_unit')"></label>
+                                                <input class="form-control form-control-sm" maxlength="11"
+                                                    x-model="s.unit">
+                                            </div>
+                                            <div class="col-4 col-md-2">
+                                                <label class="form-label small">min</label>
+                                                <input type="number" class="form-control form-control-sm" :value="s.min"
+                                                    @input="numberInput(s, 'min', $event)">
+                                            </div>
+                                            <div class="col-4 col-md-2">
+                                                <label class="form-label small">max</label>
+                                                <input type="number" class="form-control form-control-sm" :value="s.max"
+                                                    @input="numberInput(s, 'max', $event)">
+                                            </div>
+                                            <div class="col-4 col-md-2">
+                                                <label class="form-label small" x-text="t('ed_decimals')"></label>
+                                                <input type="number" min="0" max="3" class="form-control form-control-sm"
+                                                    :value="s.decimals" @input="numberInput(s, 'decimals', $event)">
+                                            </div>
+                                            <div class="col-8 col-md-10 d-flex gap-2 justify-content-end">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                    @click="sigOpen = sigOpen === si ? -1 : si">
+                                                    <i class="fas fa-palette me-1"></i><span x-text="t('ed_zones')"></span>
+                                                    <span x-text="'(' + s.zones.length + ')'"></span>
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                    :disabled="layout.signals.length <= 1" @click="removeSignal(si)"><i
+                                                        class="fas fa-trash"></i></button>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2" x-show="sigOpen === si">
+                                            <template x-for="(z, zi) in s.zones" :key="zi">
+                                                <div class="d-flex align-items-center gap-2 mb-1">
+                                                    <span class="small text-muted" x-text="t('ed_from')"></span>
+                                                    <input type="number" class="form-control form-control-sm"
+                                                        :value="z.from" @input="numberInput(z, 'from', $event)">
+                                                    <span class="small text-muted" x-text="t('ed_to')"></span>
+                                                    <input type="number" class="form-control form-control-sm"
+                                                        :value="z.to" @input="numberInput(z, 'to', $event)">
+                                                    <input type="color" class="form-control form-control-color"
+                                                        x-model="z.color">
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                        @click="s.zones.splice(zi, 1); changed()"><i
+                                                            class="fas fa-xmark"></i></button>
+                                                </div>
+                                            </template>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                :disabled="s.zones.length >= limits.zones" @click="addSignalZone(s)"><i
+                                                    class="fas fa-plus me-1"></i><span x-text="t('ed_add_zone')"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Файлы на плате: управление на отдельной странице -->
+                    <div class="card">
+                        <div class="card-body d-flex flex-wrap align-items-center gap-2">
+                            <i class="fas fa-image"></i>
+                            <span class="me-auto">
+                                <span x-text="t('ed_media_link')"></span>
+                                <span class="small text-muted" x-text="'(' + media.files.length + ')'"></span>
+                            </span>
+                            <a href="/media.html" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-upload me-1"></i><span x-text="t('ed_media_manage')"></span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

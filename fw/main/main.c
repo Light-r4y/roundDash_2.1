@@ -7,12 +7,16 @@
 #include <string.h>
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "board.h"
 #include "settings.h"
 #include "auth.h"
+#include "layout.h"
+#include "can_map.h"
 #include "ui_task.h"
 #include "can_task.h"
 #include "buttons_task.h"
+#include "touch_task.h"
 #include "webcfg_task.h"
 
 // RG_LOG_LEVEL_STR задаётся в CMakeLists.txt: "INFO" при обычном "idf.py build",
@@ -44,12 +48,19 @@ void app_main(void)
     // Синхронно, до задач: все они читают настройки с первого же такта.
     roundGauge_settings_init();
     roundGauge_auth_init();
+    roundGauge_layout_init();
+    roundGauge_can_map_init();
 
     ESP_ERROR_CHECK(roundGauge_board_init());
 
     roundGauge_ui_task_start();      // Отрисовка, ядро 1 (вместе с задачей esp_lvgl_port)
+    roundGauge_touch_task_start();   // Свайпы по экрану, ядро 0
     roundGauge_can_task_start();     // Приём и разбор CAN, ядро 0
     roundGauge_webcfg_task_start();  // Точка доступа по запросу, ядро 0
+
+    // Всё поднялось - подтверждаем новую прошивку, иначе при включённом откате
+    // (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) следующая перезагрузка вернёт старую.
+    esp_ota_mark_app_valid_cancel_rollback();
 
     // Последней: долгое нажатие сразу же обращается к webcfg_task.
     roundGauge_buttons_task_start(); // Опрос кнопок, ядро 0

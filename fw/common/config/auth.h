@@ -8,9 +8,11 @@
 //
 // Перенесено из wifi-serv (src/config/auth.c) с заменой префиксов.
 //
-// TODO: сброс забытого пароля. В wifi-serv это команда в serial-консоли, здесь
-// так нельзя: RX UART0 (GPIO44) занят кнопкой 2, USB-Serial/JTAG — под CAN.
-// Способ не выбран (docs/fw-design.md, "Открытые вопросы").
+// Сброс забытого пароля. В wifi-serv это команда в serial-консоли, здесь так нельзя:
+// RX UART0 (GPIO44) занят кнопкой 2, USB-Serial/JTAG — под CAN. Поэтому пароль снимает
+// удержание кнопки 1 на RG_AUTH_RESET_HOLD_MS (buttons_task); при включении кнопку
+// держать нельзя - это GPIO0 (BOOT). Задать новый пароль можно с главной страницы веба
+// (POST /api/auth/password).
 void roundGauge_auth_init(void);
 
 // Включена ли защита сейчас (задан ли пароль).

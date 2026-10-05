@@ -1,3 +1,3 @@
 idf_component_register(SRCS "buttons_task.c"
                     INCLUDE_DIRS "."
-                    REQUIRES freertos board config webcfg)
+                    REQUIRES freertos board config webcfg ui)

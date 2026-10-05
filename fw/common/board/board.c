@@ -172,6 +172,7 @@ static esp_err_t lcd_init(void)
     return ESP_OK;
 }
 
+#if RG_HAS_TOUCH
 static esp_err_t touch_init(void)
 {
     ESP_RETURN_ON_ERROR(expander_pulse_reset(1U << RG_EXIO_TP_RST, 30, 50), TAG, "touch reset");
@@ -196,6 +197,7 @@ static esp_err_t touch_init(void)
     };
     return esp_lcd_touch_new_i2c_cst816s(io, &tp_config, &s_touch);
 }
+#endif // RG_HAS_TOUCH
 
 static esp_err_t backlight_init(void)
 {
@@ -228,7 +230,9 @@ esp_err_t roundGauge_board_init(void)
     ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c");
     ESP_RETURN_ON_ERROR(expander_init(), TAG, "expander");
     ESP_RETURN_ON_ERROR(lcd_init(), TAG, "lcd");
+#if RG_HAS_TOUCH
     ESP_RETURN_ON_ERROR(touch_init(), TAG, "touch");
+#endif
 
     ESP_LOGI(TAG, "init done");
     return ESP_OK;

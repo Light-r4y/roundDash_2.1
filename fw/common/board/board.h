@@ -125,7 +125,8 @@ bool roundGauge_board_btn_pressed(int idx);
 // Панель RGB с двумя кадровыми буферами в PSRAM (для esp_lvgl_port).
 esp_lcd_panel_handle_t roundGauge_board_lcd_panel(void);
 
-// Тач CST820 (драйвер CST816S), прерывание на RG_PIN_TOUCH_INT.
+// Тач CST820 (драйвер CST816S), прерывание на RG_PIN_TOUCH_INT. Без тача (RG_HAS_TOUCH=0)
+// не инициализируется, возвращает NULL.
 esp_lcd_touch_handle_t roundGauge_board_touch(void);
 
 // Яркость подсветки, 0-100 %.

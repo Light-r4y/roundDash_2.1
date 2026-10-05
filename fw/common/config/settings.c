@@ -4,6 +4,7 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "nvs.h"
+#include "freertos/FreeRTOS.h"
 
 static const char *TAG = "SETTINGS";
 
@@ -18,6 +19,7 @@ void roundGauge_settings_defaults(roundGauge_settings_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->version = RG_SETTINGS_VERSION;
+    out->display.brightness = RG_LCD_BL_DEFAULT_PCT;
     out->can.bitrate = RG_CAN_BITRATE_DEFAULT;
     out->can.mode = RG_CAN_LISTEN_ONLY_DEFAULT ? RG_CAN_MODE_LISTEN_ONLY : RG_CAN_MODE_NORMAL;
     out->wifi_ap.ssid[0] = '\0'; // пусто - roundGauge-XXXX по MAC
@@ -71,12 +73,22 @@ static bool parse(const char *json, roundGauge_settings_t *out)
     const cJSON *can = cJSON_GetObjectItemCaseSensitive(root, "can");
     get_u32(can, "bitrate", &out->can.bitrate);
     get_can_mode(can, "mode", &out->can.mode);
+    const cJSON *demo = cJSON_GetObjectItemCaseSensitive(can, "demo");
+    if (cJSON_IsBool(demo)) {
+        out->can.demo = cJSON_IsTrue(demo);
+    }
+
+    const cJSON *disp = cJSON_GetObjectItemCaseSensitive(root, "display");
+    uint32_t br = out->display.brightness;
+    get_u32(disp, "brightness", &br);
+    out->display.brightness = (uint8_t)(br < RG_LCD_BL_MIN_PCT ? RG_LCD_BL_MIN_PCT : (br > 100 ? 100 : br));
 
     const cJSON *ap = cJSON_GetObjectItemCaseSensitive(root, "wifi_ap");
     get_str(ap, "ssid", out->wifi_ap.ssid, sizeof(out->wifi_ap.ssid));
     get_str(ap, "password", out->wifi_ap.password, sizeof(out->wifi_ap.password));
 
-    // TODO: валидация (допустимые скорости CAN, длина пароля AP 8-64).
+    // TODO: валидация при разборе NVS (скорость CAN, длина пароля AP 8-64); из веба
+    // скорость CAN проверяет POST /api/can.
 
     cJSON_Delete(root);
     return true;
@@ -90,6 +102,10 @@ static char *serialize(const roundGauge_settings_t *cfg)
     cJSON *can = cJSON_AddObjectToObject(root, "can");
     cJSON_AddNumberToObject(can, "bitrate", cfg->can.bitrate);
     cJSON_AddStringToObject(can, "mode", CAN_MODE_NAMES[cfg->can.mode]);
+    cJSON_AddBoolToObject(can, "demo", cfg->can.demo);
+
+    cJSON *disp = cJSON_AddObjectToObject(root, "display");
+    cJSON_AddNumberToObject(disp, "brightness", cfg->display.brightness);
 
     cJSON *ap = cJSON_AddObjectToObject(root, "wifi_ap");
     cJSON_AddStringToObject(ap, "ssid", cfg->wifi_ap.ssid);
@@ -135,6 +151,48 @@ void roundGauge_settings_init(void)
 const roundGauge_settings_t *roundGauge_settings_get(void)
 {
     return &s_cfg;
+}
+
+static portMUX_TYPE s_can_lock = portMUX_INITIALIZER_UNLOCKED;
+
+void roundGauge_settings_get_can(roundGauge_can_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.can;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+void roundGauge_settings_get_display(roundGauge_display_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.display;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+esp_err_t roundGauge_settings_set_display(const roundGauge_display_settings_t *d)
+{
+    roundGauge_settings_t next = s_cfg;
+    next.display = *d;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.display = *d;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
+}
+
+esp_err_t roundGauge_settings_set_can(const roundGauge_can_settings_t *can)
+{
+    roundGauge_settings_t next = s_cfg;
+    next.can = *can;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.can = *can;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
 }
 
 esp_err_t roundGauge_settings_save(const roundGauge_settings_t *cfg)

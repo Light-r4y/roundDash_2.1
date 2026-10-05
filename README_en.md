@@ -10,26 +10,27 @@
 Firmware for a car dashboard on the round touch screen
 [Waveshare ESP32-S3-Touch-LCD-2.1](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2.1)
 (480×480): data comes from the CAN bus, what to show and how is configured
-from a web page over Wi-Fi, and two physical buttons sit on the board's
-connector.
+from a web page over Wi-Fi, and it is operated with two buttons on the board's
+connector and swipes on the screen.
 
-> 🚧 **Status: skeleton.** The screen and touch work — after flashing, the
-> screen shows a test gauge. CAN, Wi-Fi and web configuration are stubs with
-> `TODO`s. Design decisions and open questions are in
-> [docs/fw-design.md](docs/fw-design.md) (in Russian).
+> 🧪 **Status: working prototype.** Screens, the editor, image upload and the
+> access point have been tested on the board. **CAN reception from a real bus,
+> over-the-air update (`/ota`), the web home page (brightness, password) and some
+> widgets have not been tested on hardware yet** — the full list is in
+> [docs/fw-design.md §11](docs/fw-design.md) (in Russian).
 
 ## ✨ Features
 
 | | What | Status |
 |---|---|---|
 | 🖥️ | ST7701S 480×480 screen, LVGL 9, two frame buffers, no tearing | ✅ works |
-| 👆 | CST820 touch | ✅ works |
-| 🚌 | CAN (TWAI) reception, signal decoding from a table in the settings | ⏳ stub |
-| 🎛️ | CAN mode: listen-only (default) or normal — for OBD-PID requests | ⏳ stub |
-| 📶 | Wi-Fi access point on a long press of button 1 | ⏳ stub |
-| 🌐 | Web configuration: light/dark theme, RU/EN, password for changes | ⏳ header only |
-| 🔄 | Firmware and web interface updates via `/ota`, rollback of a failed update | ⏳ page exists, no server yet |
-| 🖼️ | Dashboard backgrounds and needles from the `media` partition, custom uploads via the web | ⏳ stub |
+| 🎨 | Up to 4 screens of three types — dial, ring fill, plain number — and up to 4 extra widgets on each (number, text, image, conditional indicator, bar, mini arc); backgrounds and needles from images | ✅ works (`bar`/`arc`/`indicator` and custom fonts — 🧪) |
+| 👆 | Swipe left/right to switch screens; a build option for a screen without touch (`RG_HAS_TOUCH=0`) | ✅ works |
+| 🔘 | Button 1: short press — next screen, hold — access point; button 2 — next screen | ✅ works |
+| 🚌 | CAN (TWAI) reception, DBC-style signal-to-frame mapping, data timeouts, web sniffer, "demo" mode with a generator | 🧪 written, not tested on a bus |
+| 📶 | Wi-Fi access point on a long press of button 1; the screen shows a card with the network name, password and address, then an icon with the client count | ✅ access point, 🧪 card |
+| 🌐 | Web interface: home (status, brightness, password), screen editor with preview and drag & drop, media, CAN, update; RU/EN, light/dark theme | ✅ editor and media, 🧪 home |
+| 🔄 | Firmware and web interface updates via `/ota`, rollback of a failed update | 🧪 written, not tested on the board |
 
 ## 🔧 Hardware
 
@@ -52,18 +53,19 @@ Everything connects to the J9 "12PIN Multi-function Interface" connector:
 
 > ⚠️ In the car, power the board through J9 pin 2, not through the Type-C
 > port: while Type-C is powered, a switch on the board hands GPIO44 to the
-> USB-UART chip and button 2 stops working. Details:
-> [docs/fw-design.md §3](docs/fw-design.md).
+> USB-UART chip and button 2 stops working. On the desk, with Type-C power,
+> button 1 remains. Details: [docs/fw-design.md §3](docs/fw-design.md).
 
 ## 📁 Layout
 
 ```
 ├── fw/                 firmware (ESP-IDF project)
 │   ├── main/           initialization and task startup
-│   ├── tasks/          one component per task: can, ui, buttons, webcfg
-│   ├── common/         board (pins, screen, touch), config (settings, password)
+│   ├── tasks/          one component per task: can, ui, buttons, touch, webcfg
+│   ├── common/         board (pins, screen, touch), config (settings, password,
+│   │                   screen layout, CAN table), signals (signal values)
 │   ├── www/            web interface → www partition
-│   └── media/          dashboard images → media partition
+│   └── media/          base set of images → media partition
 ├── docs/fw-design.md   firmware design, decisions, open questions
 ├── hw/                 board schematic, datasheets, mechanical drawings
 └── tools/
@@ -81,6 +83,10 @@ manager on the first build.
 
 ## 🚀 Quick start
 
+The ESP-IDF project is in `fw/`, not in the repository root. In VS Code with the
+Espressif extension open `roundGauge.code-workspace` (or the `fw` folder),
+otherwise the Build button looks for `CMakeLists.txt` in the root.
+
 ```bash
 cd fw
 idf.py build
@@ -89,11 +95,9 @@ idf.py -p COM5 flash monitor
 
 Use the port of the CH343 USB-UART on the board's Type-C; download mode is
 entered automatically. The target (`esp32s3`), 16 MB flash, PSRAM and the
-partition table are already set in `fw/sdkconfig.defaults`.
-
-After flashing, the screen shows a round gauge whose needle is swept by an
-animation, with the firmware version in the middle; a dot under your finger
-shows that touch works.
+partition table are already set in `fw/sdkconfig.defaults`. Delete
+`fw/sdkconfig` after editing `sdkconfig.defaults`, or the new values are not
+picked up.
 
 > 💡 **Windows:** if ESP-IDF was installed with EIM and the system Python is
 > newer than 3.11, `export.ps1` won't find its environment. Put the Python
@@ -101,6 +105,41 @@ shows that touch works.
 > ```powershell
 > $env:PATH = "$env:USERPROFILE\.espressif\tools\idf-python\3.11.2;$env:PATH"; . $env:USERPROFILE\esp\v6.0\esp-idf\export.ps1
 > ```
+
+### First run
+
+After flashing, the screen shows three built-in screens: RPM (dial), COOLANT
+(ring), SPEED (number). There is no data yet, so the values show `--`. To see
+them alive without a bus:
+
+1. **Hold button 1 for two seconds** — a card with the network name
+   (`roundGauge-XXXX`), the password (`roundgauge`) and the address appears.
+2. Connect to that network from a phone or laptop and open `http://192.168.4.1/`.
+3. **CAN** → turn on **"Demo"** → Apply. The values start moving.
+4. **Screens** — the look: drag widgets on the preview; "Apply to gauge" sends
+   the layout to the board immediately.
+5. **Media** — your own backgrounds, needles and fonts.
+
+### Controls
+
+| Action | Result |
+|---|---|
+| Button 1, short press | next screen |
+| Button 1, hold 2 s | Wi-Fi access point |
+| Button 1, hold 10 s | clear a forgotten settings password |
+| Button 2 | next screen |
+| Swipe left / right | next / previous screen |
+
+### Build options
+
+```bash
+idf.py -D RG_HAS_TOUCH=0 build   # a screen without a touch panel
+```
+
+The value lives in the build cache; to get touch back run
+`idf.py -D RG_HAS_TOUCH=1 reconfigure`. The FPS lines at the top of the screen are
+turned off with the `RG_UI_SHOW_FPS` constant in `fw/common/config/conf.h`.
+More in [docs/fw-design.md §10](docs/fw-design.md).
 
 ## 📦 Release build
 
@@ -119,6 +158,10 @@ and `flash_args`. A new board is flashed from that folder with one command:
 python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"
 ```
 
+Flashing replaces the `media` partition with the base set (images uploaded
+through the web disappear); the screen layout, the CAN table, the settings and
+the password live in NVS and are kept.
+
 ## 🌐 Web interface without hardware
 
 ```bash
@@ -126,8 +169,8 @@ python tools/webtest/mock_server.py
 ```
 
 Open `http://localhost:8088/`. The server serves `fw/www` as is and emulates
-the board's API — see [tools/webtest/README.md](tools/webtest/README.md)
-(in Russian).
+the board's API, including CAN with fake frames — see
+[tools/webtest/README.md](tools/webtest/README.md) (in Russian).
 
 ## 🧩 Third-party code
 

@@ -21,6 +21,14 @@ if(NOT DEFINED RG_LOG_LEVEL)
 endif()
 idf_build_set_property(COMPILE_DEFINITIONS "RG_LOG_LEVEL_STR=\"${RG_LOG_LEVEL}\"" APPEND)
 
+# Есть ли у экрана тач-панель: 1 (по умолчанию) или 0 - "idf.py -D RG_HAS_TOUCH=0 build".
+# Без тача плата его не инициализирует и задачу тача не запускает; управление остаётся
+# на кнопках. Значение -D живёт в кэше сборки: вернуть - "idf.py -D RG_HAS_TOUCH=1 reconfigure".
+if(NOT DEFINED RG_HAS_TOUCH)
+    set(RG_HAS_TOUCH 1)
+endif()
+idf_build_set_property(COMPILE_DEFINITIONS "RG_HAS_TOUCH=${RG_HAS_TOUCH}" APPEND)
+
 # Версия приложения берётся ESP-IDF из version.txt рядом с этим файлом; его
 # переписывает tools/build/build.* (0.<YY>.<MMDD>).
 project(roundGauge)

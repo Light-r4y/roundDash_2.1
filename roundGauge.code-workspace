@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{ "name": "fw (ESP-IDF)", "path": "fw" },
+		{ "name": "repo", "path": "." }
+	],
+	"settings": {
+		"files.exclude": { "fw": true },
+		"cmake.sourceDirectory": "${workspaceFolder:fw (ESP-IDF)}",
+		"cmake.configureOnOpen": false
+	}
+}

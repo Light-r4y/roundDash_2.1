@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stdint.h>
 
 // Настройка по Wi-Fi: точка доступа + HTTP-сервер.
 //
@@ -19,3 +20,20 @@ void roundGauge_webcfg_start(void);
 
 // true, если точка доступа уже поднята (или поднимается).
 bool roundGauge_webcfg_running(void);
+
+// Состояние точки доступа для экрана: выключена / запускается (кнопка нажата, сеть ещё
+// не поднята) / работает. Пока сеть открыта, пароль пустой.
+typedef enum {
+    RG_AP_OFF = 0,
+    RG_AP_STARTING,
+    RG_AP_UP,
+} roundGauge_ap_state_t;
+
+typedef struct {
+    roundGauge_ap_state_t state;
+    char ssid[33];
+    char password[65];
+    uint8_t clients; // сколько устройств подключено сейчас
+} roundGauge_ap_info_t;
+
+void roundGauge_webcfg_get_ap_info(roundGauge_ap_info_t *out);

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - CAN</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/can.js"></script>
+    <style>
+        .frame-byte { display: inline-block; min-width: 1.6em; text-align: center; border-radius: 3px; }
+        .frame-byte.hot { background: var(--rg-accent); color: var(--rg-bg); }
+        .map-err { border-color: var(--rg-danger) !important; }
+        /* Таблица в цветах темы: свои переменные для Bootstrap 5.2/5.3 и прямые правила. */
+        .table { --bs-table-bg: transparent; --bs-table-color: var(--rg-text); --bs-table-border-color: var(--rg-border); color: var(--rg-text); }
+        .table > :not(caption) > * > * { background-color: transparent; color: var(--rg-text); border-color: var(--rg-border); }
+    </style>
+</head>
+
+<body>
+    <div x-data="canPage()" x-effect="document.title = t('title_can')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/media.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-image me-1"></i><span x-text="t('nav_media')"></span>
+                    </a>
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container-fluid mt-3 mb-5 px-3">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <div class="row g-3">
+                <!-- Шина -->
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="mb-3"><i class="fas fa-plug me-2"></i><span x-text="t('can_bus')"></span></h6>
+
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                                <span class="badge" :class="stateClass()" x-text="stateLabel()"></span>
+                                <span class="small text-muted" x-show="status && status.node_up">
+                                    <span x-text="rxRate"></span> <span x-text="t('can_fps')"></span>
+                                </span>
+                            </div>
+                            <div class="small text-muted mb-3" x-show="status">
+                                <div><span x-text="t('can_rx_total')"></span>: <span x-text="status && status.rx"></span>
+                                </div>
+                                <div><span x-text="t('can_dropped')"></span>: <span
+                                        x-text="status && status.dropped"></span></div>
+                                <div><span x-text="t('can_errors')"></span>: TX <span
+                                        x-text="status && status.tx_err"></span> / RX <span
+                                        x-text="status && status.rx_err"></span> / bus <span
+                                        x-text="status && status.bus_err"></span></div>
+                                <div x-show="status && status.busoff"><span x-text="t('can_busoff')"></span>: <span
+                                        x-text="status && status.busoff"></span></div>
+                            </div>
+
+                            <div class="mb-2">
+                                <label class="form-label small" x-text="t('can_bitrate')"></label>
+                                <select class="form-select form-select-sm" x-model.number="cfg.bitrate"
+                                    @change="cfgChanged()">
+                                    <template x-for="b in bitrateOptions" :key="b">
+                                        <option :value="b" x-text="(b / 1000) + ' kbit/s'" :selected="b === cfg.bitrate">
+                                        </option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small" x-text="t('can_mode')"></label>
+                                <select class="form-select form-select-sm" x-model="cfg.mode" @change="cfgChanged()">
+                                    <option value="listen_only" :selected="cfg.mode === 'listen_only'"
+                                        x-text="t('can_mode_listen')"></option>
+                                    <option value="normal" :selected="cfg.mode === 'normal'"
+                                        x-text="t('can_mode_normal')"></option>
+                                </select>
+                                <div class="form-text" x-text="t('can_mode_hint')"></div>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="demo" x-model="cfg.demo"
+                                    @change="cfgChanged()">
+                                <label class="form-check-label" for="demo" x-text="t('can_demo')"></label>
+                                <div class="form-text" x-text="t('can_demo_hint')"></div>
+                            </div>
+                            <button type="button" class="btn btn-accent" :disabled="busy || controlsLocked()"
+                                @click="applyCfg()">
+                                <i class="fas fa-check me-1"></i><span x-text="t('can_apply')"></span>
+                            </button>
+                            <span class="badge bg-warning text-dark ms-2" x-show="cfgDirty"
+                                x-text="t('ed_unsaved')"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Привязки -->
+                <div class="col-lg-8">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                <h6 class="mb-0 me-auto"><i class="fas fa-link me-2"></i><span
+                                        x-text="t('can_map')"></span>
+                                    <span class="small text-muted"
+                                        x-text="'(' + map.length + '/' + 16 + ')'"></span></h6>
+                                <span class="badge bg-warning text-dark" x-show="mapDirty"
+                                    x-text="t('ed_unsaved')"></span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    :disabled="map.length >= 16" @click="addEntry()"><i class="fas fa-plus me-1"></i><span
+                                        x-text="t('can_add')"></span></button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @click="reloadMap()"><i
+                                        class="fas fa-rotate me-1"></i><span x-text="t('ed_reload')"></span></button>
+                                <button type="button" class="btn btn-sm btn-accent"
+                                    :disabled="busy || mapInvalid || controlsLocked()" @click="applyMap()"><i
+                                        class="fas fa-check me-1"></i><span x-text="t('can_apply')"></span></button>
+                            </div>
+                            <div class="form-text mb-2" x-text="t('can_map_hint')"></div>
+
+                            <template x-for="(e, i) in map" :key="i">
+                                <div class="border rounded p-2 mb-2" style="border-color:var(--rg-border) !important">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-6 col-md-3">
+                                            <label class="form-label small" x-text="t('ed_signal')"></label>
+                                            <select class="form-select form-select-sm" x-model="e.signal"
+                                                @change="mapChanged()">
+                                                <template x-if="e.signal && !signals.includes(e.signal)">
+                                                    <option :value="e.signal" selected x-text="e.signal + ' ⚠'"></option>
+                                                </template>
+                                                <template x-if="!e.signal">
+                                                    <option value="" selected>-</option>
+                                                </template>
+                                                <template x-for="n in signals" :key="n">
+                                                    <option :value="n" x-text="n" :selected="n === e.signal"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="col-6 col-md-2">
+                                            <label class="form-label small">ID (hex)</label>
+                                            <input class="form-control form-control-sm font-monospace" x-model="e.id"
+                                                @input="mapChanged()"
+                                                :class="entryError(e, i) ? 'map-err' : ''">
+                                        </div>
+                                        <div class="col-4 col-md-2 d-flex align-items-end">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" :id="'ext' + i"
+                                                    x-model="e.ext" @change="mapChanged()">
+                                                <label class="form-check-label small" :for="'ext' + i">29 bit</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 col-md-2">
+                                            <label class="form-label small" x-text="t('can_start')"></label>
+                                            <input type="number" min="0" max="63" class="form-control form-control-sm"
+                                                :value="e.start" @input="entryNumber(e, 'start', $event)">
+                                        </div>
+                                        <div class="col-4 col-md-2">
+                                            <label class="form-label small" x-text="t('can_len')"></label>
+                                            <input type="number" min="1" max="32" class="form-control form-control-sm"
+                                                :value="e.len" @input="entryNumber(e, 'len', $event)">
+                                        </div>
+                                        <div class="col-4 col-md-3">
+                                            <label class="form-label small" x-text="t('can_order')"></label>
+                                            <select class="form-select form-select-sm" x-model="e.order"
+                                                @change="mapChanged()">
+                                                <option value="intel" :selected="e.order === 'intel'">Intel (@1)</option>
+                                                <option value="motorola" :selected="e.order === 'motorola'">Motorola (@0)
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div class="col-4 col-md-2 d-flex align-items-end">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" :id="'sg' + i"
+                                                    x-model="e.signed" @change="mapChanged()">
+                                                <label class="form-check-label small" :for="'sg' + i"
+                                                    x-text="t('can_signed')"></label>
+                                            </div>
+                                        </div>
+                                        <div class="col-4 col-md-2">
+                                            <label class="form-label small">factor</label>
+                                            <input type="number" step="any" class="form-control form-control-sm"
+                                                :value="e.factor" @input="entryNumber(e, 'factor', $event)">
+                                        </div>
+                                        <div class="col-4 col-md-2">
+                                            <label class="form-label small">offset</label>
+                                            <input type="number" step="any" class="form-control form-control-sm"
+                                                :value="e.offset" @input="entryNumber(e, 'offset', $event)">
+                                        </div>
+                                        <div class="col-8 col-md-2">
+                                            <label class="form-label small" x-text="t('can_timeout')"></label>
+                                            <input type="number" min="100" max="60000" step="100"
+                                                class="form-control form-control-sm" :value="e.timeout"
+                                                @input="entryNumber(e, 'timeout', $event)">
+                                        </div>
+                                        <div class="col-4 col-md-1 text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                @click="removeEntry(i)"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                    <div class="small text-fault mt-1" x-show="entryError(e, i)"
+                                        x-text="entryError(e, i)"></div>
+                                </div>
+                            </template>
+                            <div class="small text-muted" x-show="!map.length" x-text="t('can_map_empty')"></div>
+                        </div>
+                    </div>
+
+                    <!-- Сниффер -->
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                <h6 class="mb-0 me-auto"><i class="fas fa-satellite-dish me-2"></i><span
+                                        x-text="t('can_sniffer')"></span>
+                                    <span class="small text-muted" x-text="'(' + frames.length + ')'"></span></h6>
+                                <input class="form-control form-control-sm" style="max-width:9em"
+                                    :placeholder="t('can_filter')" x-model="filter">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @click="paused = !paused">
+                                    <i class="fas" :class="paused ? 'fa-play' : 'fa-pause'"></i>
+                                </button>
+                            </div>
+                            <div class="form-text mb-2" x-text="t('can_sniffer_hint')"></div>
+                            <div class="table-responsive" style="max-height:420px;overflow:auto">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>ID</th>
+                                            <th>DLC</th>
+                                            <th x-text="t('can_data')"></th>
+                                            <th class="text-end" x-text="t('can_rate')"></th>
+                                            <th class="text-end" x-text="t('can_count')"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="font-monospace">
+                                        <template x-for="f in shownFrames" :key="f.k">
+                                            <tr>
+                                                <td>
+                                                    <span x-text="idLabel(f)"></span>
+                                                    <i class="fas fa-link ms-1 text-success" x-show="mapped(f)"
+                                                        :title="t('can_mapped')"></i>
+                                                </td>
+                                                <td x-text="f.dlc"></td>
+                                                <td>
+                                                    <template x-for="(b, bi) in f.bytes" :key="bi">
+                                                        <span class="frame-byte" :class="hot(f, bi) ? 'hot' : ''"
+                                                            x-text="b"></span>
+                                                    </template>
+                                                </td>
+                                                <td class="text-end" x-text="f.rate + ' Hz'"></td>
+                                                <td class="text-end" x-text="f.count"></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="small text-muted mt-2" x-show="!frames.length" x-text="t('can_sniffer_empty')">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

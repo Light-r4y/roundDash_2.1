@@ -13,6 +13,18 @@
     <script src="/i18n.js"></script>
     <script src="/auth-client.js"></script>
     <script src="/index.js"></script>
+    <style>
+        .tile { display: block; height: 100%; padding: 1rem; border-radius: .6rem; text-decoration: none;
+                color: var(--rg-text); background: var(--rg-bg-elevated); border: 1px solid var(--rg-border);
+                transition: border-color .15s, transform .15s; }
+        .tile:hover { border-color: var(--rg-accent); color: var(--rg-text); transform: translateY(-2px); }
+        .tile .tile-icon { font-size: 1.6rem; color: var(--rg-accent); }
+        .tile .tile-title { font-weight: 600; margin-top: .4rem; }
+        .tile .tile-sub { color: var(--rg-text-muted); font-size: .85rem; min-height: 1.2em; }
+        .kv { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0; border-top: 1px solid var(--rg-border); }
+        .kv:first-child { border-top: 0; }
+        .kv .k { color: var(--rg-text-muted); }
+    </style>
 </head>
 
 <body>
@@ -29,9 +41,6 @@
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
                         x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
-                    <a href="/ota" class="btn btn-sm btn-accent">
-                        <i class="fas fa-cloud-upload-alt me-1"></i><span x-text="t('nav_update')"></span>
-                    </a>
                     <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
                         :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
                         @click="toggleLockButton()">
@@ -63,10 +72,125 @@
             </div>
         </div>
 
-        <div class="container mt-4">
-            <!-- TODO: настройки CAN, таблица сигналов, экраны, медиа, Wi-Fi, пароль -->
-            <div class="card">
-                <div class="card-body text-muted" x-text="t('placeholder')"></div>
+        <div class="container mt-4 mb-5" style="max-width:960px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+
+            <!-- Разделы -->
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <a href="/editor.html" class="tile">
+                        <i class="fas fa-sliders tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_editor')"></div>
+                        <div class="tile-sub" x-text="subScreens()"></div>
+                    </a>
+                </div>
+                <div class="col-6 col-md-3">
+                    <a href="/media.html" class="tile">
+                        <i class="fas fa-image tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_media')"></div>
+                        <div class="tile-sub" x-text="subMedia()"></div>
+                    </a>
+                </div>
+                <div class="col-6 col-md-3">
+                    <a href="/can.html" class="tile">
+                        <i class="fas fa-plug tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_can')"></div>
+                        <div class="tile-sub" x-text="subCan()"></div>
+                    </a>
+                </div>
+                <div class="col-6 col-md-3">
+                    <a href="/ota" class="tile">
+                        <i class="fas fa-cloud-upload-alt tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_update')"></div>
+                        <div class="tile-sub" x-text="status ? 'v' + status.fw_version : ''"></div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <!-- Состояние -->
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h6 class="mb-3"><i class="fas fa-heart-pulse me-2"></i><span
+                                    x-text="t('home_status')"></span></h6>
+                            <div x-show="!status" class="small text-muted" x-text="t('home_no_link')"></div>
+                            <template x-if="status">
+                                <div>
+                                    <div class="kv"><span class="k" x-text="t('st_version')"></span><span
+                                            x-text="status.fw_version"></span></div>
+                                    <div class="kv"><span class="k" x-text="t('st_uptime')"></span><span
+                                            x-text="fmtUptime(status.uptime_s)"></span></div>
+                                    <div class="kv"><span class="k" x-text="t('st_reset')"></span><span
+                                            x-text="resetReason(status.reset_reason)"></span></div>
+                                    <div class="kv"><span class="k" x-text="t('st_ap_clients')"></span><span
+                                            x-text="status.ap_clients ?? 0"></span></div>
+                                    <div class="kv" x-show="can"><span class="k" x-text="t('st_can')"></span><span>
+                                            <span class="badge" :class="canClass()" x-text="canLabel()"></span>
+                                            <span class="small text-muted ms-1" x-show="can && can.node_up"
+                                                x-text="canRate + ' ' + t('can_fps')"></span></span></div>
+                                    <div class="kv" x-show="media"><span class="k" x-text="t('st_media')"></span><span
+                                            x-text="media ? fmtSize(media.used) + ' / ' + fmtSize(media.total) : ''"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Настройки -->
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h6 class="mb-3"><i class="fas fa-gear me-2"></i><span x-text="t('home_settings')"></span>
+                            </h6>
+
+                            <!-- Яркость -->
+                            <label class="form-label small" for="bright" x-text="t('set_brightness')"></label>
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <i class="fas fa-sun text-muted"></i>
+                                <input type="range" class="form-range" id="bright" min="5" max="100" step="1"
+                                    :value="brightness" :disabled="controlsLocked() || brightness === null"
+                                    @input="onBrightness($event)">
+                                <span class="small text-muted text-nowrap" style="min-width:3em"
+                                    x-text="brightness === null ? '-' : brightness + ' %'"></span>
+                            </div>
+
+                            <!-- Пароль -->
+                            <label class="form-label small mb-1" x-text="t('set_password')"></label>
+                            <div class="mb-2">
+                                <span class="badge" :class="authRequired ? 'bg-success' : 'bg-secondary'"
+                                    x-text="authRequired ? t('pw_on') : t('pw_off')"></span>
+                            </div>
+                            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')">
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <input type="password" class="form-control form-control-sm" autocomplete="new-password"
+                                        :placeholder="t('pw_new')" x-model="pwNew" :disabled="controlsLocked()"
+                                        @keyup.enter="savePassword()">
+                                </div>
+                                <div class="col-sm-6">
+                                    <input type="password" class="form-control form-control-sm" autocomplete="new-password"
+                                        :placeholder="t('pw_repeat')" x-model="pwRepeat" :disabled="controlsLocked()"
+                                        @keyup.enter="savePassword()">
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-sm btn-accent"
+                                    :disabled="busy || controlsLocked() || !pwNew" @click="savePassword()">
+                                    <i class="fas fa-key me-1"></i><span
+                                        x-text="authRequired ? t('pw_change') : t('pw_set')"></span>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                                    :disabled="busy || controlsLocked()" @click="removePassword()">
+                                    <i class="fas fa-lock-open me-1"></i><span x-text="t('pw_remove')"></span>
+                                </button>
+                            </div>
+                            <div class="form-text mt-2" x-text="t('pw_hint')"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

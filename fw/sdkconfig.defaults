@@ -47,3 +47,21 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_SPIFFS_OBJ_NAME_LEN=48
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_HTTPD_MAX_URI_LEN=512
+
+# Картинки из раздела media (/media) читает LVGL через POSIX-драйвер:
+# путь "M:/имя.bin" -> /media/имя.bin. Свой формат .bin - встроенный декодер.
+CONFIG_LV_USE_FS_POSIX=y
+CONFIG_LV_FS_POSIX_LETTER=77
+CONFIG_LV_FS_POSIX_PATH="/media"
+# Картинки целиком декодируются в RAM (PSRAM) один раз и лежат в кэше. Без этого
+# декодер читает .bin из SPIFFS кусками при каждой перерисовке области - фон со
+# стрелкой давал 5 fps. Кэш: фон до 922 КБ (ARGB8888) + стрелка + запас на экраны.
+CONFIG_LV_BIN_DECODER_RAM_LOAD=y
+CONFIG_LV_CACHE_DEF_SIZE=3145728
+# Память LVGL - из общей кучи (большие блоки уходят в PSRAM), а не из пула 64 КБ:
+# иначе кэш картинок и много экранов не поместятся.
+CONFIG_LV_USE_CLIB_MALLOC=y
+
+# Период обновления дисплея LVGL: по умолчанию 33 мс - потолок 30 fps. 16 мс - под
+# частоту панели (~60 Гц); реальный fps определяет время рисования кадра.
+CONFIG_LV_DEF_REFR_PERIOD=16

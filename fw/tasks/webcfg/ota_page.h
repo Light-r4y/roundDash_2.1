@@ -354,7 +354,7 @@ const char RG_OTA_PAGE_HTML[] = R"rawliteral(
             }
         }
 
-        // Итог загрузки с нашим id из /api/status (TODO: webcfg_task.c).
+        // Итог загрузки с нашим id из /api/status (поле www_update, webcfg_task.c).
         // null - плата ещё занята или итога с таким id нет.
         async function fetchUpdateResult(id) {
             try {
