@@ -1,8 +1,7 @@
-// Главная страница: состояние устройства, переходы в разделы, яркость и пароль на настройки.
+// Главная страница: состояние устройства, переходы в разделы, яркость и переход к паролям.
 // init() Alpine вызывает сам — x-init="init()" в разметке вызвал бы его дважды.
 const RG_RESET_REASONS = ['unknown', 'poweron', 'ext', 'sw', 'panic', 'int_wdt', 'task_wdt', 'wdt', 'deepsleep',
     'brownout', 'sdio', 'usb', 'jtag', 'efuse', 'pwr_glitch', 'cpu_lockup'];
-const RG_PASSWORD_MIN = 4, RG_PASSWORD_MAX = 64;
 
 function mainPage() {
     return {
@@ -16,11 +15,10 @@ function mainPage() {
         lastRx: null,
         media: null,    // /api/media
         layout: null,   // сводка по /api/layout: { screens, signals }
+        imu: null,      // /api/imu
         brightness: null,
         brightTimer: null,
 
-        pwNew: '',
-        pwRepeat: '',
         busy: false,
         message: '',
         messageType: 'success',
@@ -53,9 +51,11 @@ function mainPage() {
             }
             this.can = can;
             if (!once) return;
-            const [media, layout, display] = await Promise.all([
-                this.getJson('/api/media'), this.getJson('/api/layout'), this.getJson('/api/display')]);
+            const [media, layout, display, imu] = await Promise.all([
+                this.getJson('/api/media'), this.getJson('/api/layout'), this.getJson('/api/display'),
+                this.getJson('/api/imu')]);
             this.media = media;
+            this.imu = imu;
             if (layout) {
                 this.layout = { screens: (layout.screens || []).length,
                     signals: Array.isArray(layout.signals) ? layout.signals.length : null };
@@ -70,6 +70,10 @@ function mainPage() {
         },
         subMedia() {
             return this.media ? this.t('tile_media').replace('{n}', this.media.files.length) : '';
+        },
+        subImu() {
+            if (!this.imu) return '';
+            return this.t(!this.imu.ok ? 'tile_imu_missing' : (this.imu.calibrated ? 'tile_imu_ok' : 'tile_imu_nocal'));
         },
         subCan() {
             if (!this.can) return '';
@@ -92,6 +96,13 @@ function mainPage() {
             const key = 'rr_' + name;
             const label = this.t(key);
             return label === key ? name : label;
+        },
+        // Внутренняя RAM (она тесная): свободно сейчас и минимум за всё время работы; PSRAM - свободно.
+        heapText() {
+            const h = this.status && this.status.heap;
+            if (!h) return '';
+            const kb = (n) => Math.round(n / 1024) + ' KB';
+            return kb(h.int_free) + ' (' + this.t('st_heap_min') + ' ' + kb(h.int_min) + ') · PSRAM ' + this.fmtSize(h.psram_free);
         },
         fmtSize(b) {
             return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b >= 1024 ? Math.round(b / 1024) + ' KB' : b + ' B';
@@ -125,56 +136,6 @@ function mainPage() {
                 if (!res.ok) throw new Error((await res.text()) || ('HTTP ' + res.status));
             } catch (e) {
                 this.say(this.t('set_err') + ': ' + e.message, 'danger');
-            }
-        },
-
-        // ---- пароль на настройки ----
-        async savePassword() {
-            if (this.busy || !this.pwNew) return;
-            if (this.pwNew.length < RG_PASSWORD_MIN || this.pwNew.length > RG_PASSWORD_MAX) {
-                this.say(this.t('pw_err_len').replace('{a}', RG_PASSWORD_MIN).replace('{b}', RG_PASSWORD_MAX), 'danger');
-                return;
-            }
-            if (this.pwNew !== this.pwRepeat) {
-                this.say(this.t('pw_err_match'), 'danger');
-                return;
-            }
-            await this.sendPassword(this.pwNew);
-        },
-        async removePassword() {
-            if (this.busy || !confirm(this.t('pw_confirm_remove'))) return;
-            await this.sendPassword('');
-        },
-        async sendPassword(pw) {
-            this.busy = true;
-            try {
-                const res = await this.authFetch('/api/auth/password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: pw }),
-                });
-                if (res.status === 401) return;
-                if (!res.ok) throw new Error((await res.text()) || ('HTTP ' + res.status));
-                // Вкладка остаётся разблокированной: заголовок пересчитываем под новый пароль.
-                if (pw) {
-                    const header = 'Basic ' + btoa('rg:' + pw);
-                    this.authHeaderValue = header;
-                    sessionStorage.setItem(RG_AUTH_STORAGE_KEY, header);
-                    this.authRequired = true;
-                    this.authUnlocked = true;
-                } else {
-                    this.authHeaderValue = null;
-                    sessionStorage.removeItem(RG_AUTH_STORAGE_KEY);
-                    this.authRequired = false;
-                    this.authUnlocked = true;
-                }
-                this.pwNew = '';
-                this.pwRepeat = '';
-                this.say(this.t(pw ? 'pw_saved' : 'pw_removed'), 'success');
-            } catch (e) {
-                this.say(this.t('set_err') + ': ' + e.message, 'danger');
-            } finally {
-                this.busy = false;
             }
         },
 

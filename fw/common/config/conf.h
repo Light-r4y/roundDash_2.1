@@ -42,6 +42,13 @@
 #define RG_TOUCH_SWIPE_MIN_PX 60
 #define RG_TOUCH_SWIPE_MAX_MS 800
 
+// imu_task: акселерометр QMI8658, 125 Гц (tasks/imu). Сигналы g_* живут столько мс без новых
+// отсчётов, потом пропадают (датчик замолчал).
+#define RG_IMU_TASK_STACK 3072
+#define RG_IMU_TASK_PRIORITY 4
+#define RG_IMU_TASK_CORE 0
+#define RG_IMU_SIGNAL_TIMEOUT_MS 500
+
 // webcfg_task: подъём точки доступа и HTTP-сервера по запросу.
 #define RG_WEBCFG_TASK_STACK 4096
 #define RG_WEBCFG_TASK_PRIORITY 2
@@ -64,7 +71,7 @@
 #define RG_TOAST_MS 3000
 
 // Экран приборки (tasks/ui, common/config/layout.h)
-#define RG_UI_MAX_SCREENS 4
+#define RG_UI_MAX_SCREENS 8
 // Сколько мс после запуска точки доступа на экране висит карточка с именем сети, паролем
 // и адресом; потом остаётся только значок Wi-Fi с числом подключённых.
 #define RG_AP_CARD_MS 10000
@@ -80,7 +87,10 @@
 
 // Раскладка экранов: JSON одним blob'ом в том же пространстве NVS, что настройки.
 #define RG_LAYOUT_NVS_KEY "layout"
-#define RG_LAYOUT_JSON_MAX 12288
+#define RG_LAYOUT_JSON_MAX 16384
+// Разных файлов фона на все экраны: кэш картинок (3 МБ) держит около 6 фонов 480x480,
+// остальное - запас. Экраны с одним и тем же файлом считаются за один фон.
+#define RG_UI_MAX_BG_IMAGES 4
 
 // ------------------------------------------------------------------
 // Кнопки
@@ -158,4 +168,6 @@
 // раньше, на RG_BTN_AP_HOLD_MS). При включении кнопку держать нельзя - это GPIO0 (BOOT),
 // с ним на сбросе ROM-загрузчик уходит в режим прошивки.
 #define RG_AUTH_RESET_HOLD_MS 10000
+// С этого момента удержания кнопки 1 на экране предупреждение о предстоящем сбросе.
+#define RG_AUTH_RESET_WARN_MS 7000
 #define RG_AUTH_REALM "roundGauge"           // realm для Basic Auth (что видит браузер в диалоге)

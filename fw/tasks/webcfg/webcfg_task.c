@@ -10,6 +10,8 @@
 #include "auth.h"
 #include "layout.h"
 #include "board.h"
+#include "imu_task.h"
+#include "esp_heap_caps.h"
 #include "can_map.h"
 #include "can_task.h"
 #include "cJSON.h"
@@ -131,11 +133,17 @@ static esp_err_t status_handler(httpd_req_t *req)
 {
     roundGauge_ap_info_t ap;
     roundGauge_webcfg_get_ap_info(&ap);
-    char json[360];
+    char json[512];
     int n = snprintf(json, sizeof(json),
-                     "{\"fw_version\":\"%s\",\"uptime_s\":%lld,\"reset_reason\":%d,\"ap_clients\":%u",
+                     "{\"fw_version\":\"%s\",\"uptime_s\":%lld,\"reset_reason\":%d,\"ap_clients\":%u,"
+                     "\"heap\":{\"int_free\":%u,\"int_min\":%u,\"int_block\":%u,\"psram_free\":%u,\"psram_min\":%u}",
                      esp_app_get_description()->version, (long long)(esp_timer_get_time() / 1000000),
-                     (int)esp_reset_reason(), (unsigned)ap.clients);
+                     (int)esp_reset_reason(), (unsigned)ap.clients,
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                     (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
     xSemaphoreTake(s_upd_mutex, portMAX_DELAY);
     if (s_www_update.valid) {
         n += snprintf(json + n, sizeof(json) - n, ",\"www_update\":{\"id\":\"%s\",\"done\":true,\"ok\":%s",
@@ -454,7 +462,7 @@ static esp_err_t layout_put_handler(httpd_req_t *req)
             httpd_resp_set_type(req, "application/json");
             ret = httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
         } else if (err == ESP_ERR_INVALID_ARG) {
-            ret = send_text_err(req, "400 Bad Request", "Invalid layout");
+            ret = send_text_err(req, "400 Bad Request", "Invalid layout or too many distinct background images");
         } else {
             ret = send_text_err(req, "500 Internal Server Error", "Save failed");
         }
@@ -835,6 +843,158 @@ static esp_err_t auth_password_handler(httpd_req_t *req)
                            HTTPD_RESP_USE_STRLEN);
 }
 
+// ---------------------------------------------------------------------------
+// Wi-Fi точка доступа: имя и пароль сети
+// ---------------------------------------------------------------------------
+
+// Имя по умолчанию: префикс и конец MAC - у каждой приборки своё.
+static void default_ap_ssid(char *out, size_t n)
+{
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+    snprintf(out, n, RG_WIFI_AP_SSID_PREFIX "%02X%02X", mac[4], mac[5]);
+}
+
+// Пароль сети не отдаём: чтение открыто, а пароль это то, что защищает сеть.
+static esp_err_t wifi_get_handler(httpd_req_t *req)
+{
+    roundGauge_wifi_ap_settings_t w;
+    roundGauge_settings_get_wifi(&w);
+    char def[RG_WIFI_AP_SSID_MAX_LEN + 1];
+    default_ap_ssid(def, sizeof(def));
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "ssid", w.ssid[0] ? w.ssid : def);
+    cJSON_AddStringToObject(root, "default_ssid", def);
+    cJSON_AddBoolToObject(root, "custom_ssid", w.ssid[0] != '\0');
+    cJSON_AddBoolToObject(root, "password_default", strcmp(w.password, RG_WIFI_AP_PASS_DEFAULT) == 0);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        return send_text_err(req, "500 Internal Server Error", "No memory");
+    }
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t ret = httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    free(json);
+    return ret;
+}
+
+// Менять Wi-Fi можно только с паролем на настройки: без него кто угодно в сети точки
+// сменил бы пароль самой сети. Новые значения работают после перезагрузки.
+static esp_err_t wifi_post_handler(httpd_req_t *req)
+{
+    if (!roundGauge_auth_is_enabled()) {
+        return send_text_err(req, "403 Forbidden", "Set a settings password first");
+    }
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    char *body = recv_body(req, 512);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    const cJSON *ssid = root ? cJSON_GetObjectItemCaseSensitive(root, "ssid") : NULL;
+    const cJSON *pass = root ? cJSON_GetObjectItemCaseSensitive(root, "password") : NULL;
+    if (!cJSON_IsString(pass) || pass->valuestring == NULL || (ssid != NULL && !cJSON_IsString(ssid))) {
+        cJSON_Delete(root);
+        return send_text_err(req, "400 Bad Request", "Invalid body");
+    }
+    roundGauge_wifi_ap_settings_t w = {0};
+    const char *name = ssid ? ssid->valuestring : "";
+    size_t nlen = strlen(name), plen = strlen(pass->valuestring);
+    bool ok = nlen <= RG_WIFI_AP_SSID_MAX_LEN && plen >= RG_WIFI_AP_PASSWORD_MIN_LEN &&
+              plen <= RG_WIFI_AP_PASSWORD_MAX_LEN;
+    for (size_t i = 0; ok && i < nlen; i++) {
+        ok = (unsigned char)name[i] >= 0x20 && name[i] != 0x7f;
+    }
+    if (!ok) {
+        cJSON_Delete(root);
+        return send_text_err(req, "400 Bad Request",
+                             "SSID up to " RG_STR(RG_WIFI_AP_SSID_MAX_LEN) " bytes, password " RG_STR(RG_WIFI_AP_PASSWORD_MIN_LEN) ".." RG_STR(RG_WIFI_AP_PASSWORD_MAX_LEN) " characters");
+    }
+    strlcpy(w.ssid, name, sizeof(w.ssid));
+    strlcpy(w.password, pass->valuestring, sizeof(w.password));
+    cJSON_Delete(root);
+    if (roundGauge_settings_set_wifi(&w) != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Save failed");
+    }
+    ESP_LOGI(TAG, "Wi-Fi settings saved, apply after restart");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\",\"restart\":true}", HTTPD_RESP_USE_STRLEN);
+}
+
+// ---------------------------------------------------------------------------
+// Акселерометр: живые показания, калибровка, направление "вперёд"
+// ---------------------------------------------------------------------------
+
+static esp_err_t imu_get_handler(httpd_req_t *req)
+{
+    static const char *const cal[] = { "idle", "running", "done", "moved" };
+    static const char *const det[] = { "idle", "armed", "done", "timeout" };
+    roundGauge_imu_state_t s;
+    roundGauge_imu_get_state(&s);
+    char json[320];
+    snprintf(json, sizeof(json),
+             "{\"ok\":%s,\"calibrated\":%s,\"fwd\":%u,\"cal\":\"%s\",\"detect\":\"%s\","
+             "\"raw\":[%.3f,%.3f,%.3f],\"lon\":%.3f,\"lat\":%.3f,\"vert\":%.3f,\"tot\":%.3f}",
+             s.ok ? "true" : "false", s.calibrated ? "true" : "false", (unsigned)s.fwd, cal[s.cal & 3], det[s.fwd_detect & 3],
+             (double)s.raw[0], (double)s.raw[1], (double)s.raw[2], (double)s.lon, (double)s.lat, (double)s.vert,
+             (double)s.tot);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t imu_calibrate_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    if (roundGauge_imu_calibrate() != ESP_OK) {
+        return send_text_err(req, "409 Conflict", "Sensor not available");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"started\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+// {"fwd": 0..3} - выбрать вручную; {"detect": true} - определить по разгону.
+static esp_err_t imu_forward_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    char *body = recv_body(req, 128);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (root == NULL) {
+        return send_text_err(req, "400 Bad Request", "Invalid JSON");
+    }
+    const cJSON *fwd = cJSON_GetObjectItemCaseSensitive(root, "fwd");
+    const cJSON *detect = cJSON_GetObjectItemCaseSensitive(root, "detect");
+    esp_err_t err = ESP_ERR_INVALID_ARG;
+    if (cJSON_IsNumber(fwd) && fwd->valuedouble >= 0 && fwd->valuedouble <= 3) {
+        err = roundGauge_imu_set_forward((uint8_t)fwd->valuedouble);
+    } else if (cJSON_IsTrue(detect)) {
+        err = roundGauge_imu_detect_forward();
+    }
+    cJSON_Delete(root);
+    if (err == ESP_ERR_INVALID_ARG) {
+        return send_text_err(req, "400 Bad Request", "Expected fwd 0..3 or detect");
+    }
+    if (err == ESP_ERR_INVALID_STATE) {
+        return send_text_err(req, "409 Conflict", "Sensor not available");
+    }
+    if (err != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Save failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t ota_page_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
@@ -852,7 +1012,7 @@ static void start_http_server(void)
     cfg.task_priority = RG_HTTPD_PRIORITY;
     cfg.core_id = RG_HTTPD_CORE;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 28;
+    cfg.max_uri_handlers = 32;
     cfg.recv_wait_timeout = 10;
 
     httpd_handle_t server = NULL;
@@ -875,9 +1035,14 @@ static void start_http_server(void)
         {.uri = "/api/media", .method = HTTP_GET, .handler = media_list_handler},
         {.uri = "/api/media", .method = HTTP_POST, .handler = media_upload_handler},
         {.uri = "/api/media/delete", .method = HTTP_POST, .handler = media_delete_handler},
+        {.uri = "/api/imu", .method = HTTP_GET, .handler = imu_get_handler},
+        {.uri = "/api/imu/calibrate", .method = HTTP_POST, .handler = imu_calibrate_handler},
+        {.uri = "/api/imu/forward", .method = HTTP_POST, .handler = imu_forward_handler},
         {.uri = "/api/display", .method = HTTP_GET, .handler = display_get_handler},
         {.uri = "/api/display", .method = HTTP_POST, .handler = display_post_handler},
         {.uri = "/api/auth/password", .method = HTTP_POST, .handler = auth_password_handler},
+        {.uri = "/api/wifi", .method = HTTP_GET, .handler = wifi_get_handler},
+        {.uri = "/api/wifi", .method = HTTP_POST, .handler = wifi_post_handler},
         {.uri = "/api/can", .method = HTTP_GET, .handler = can_get_handler},
         {.uri = "/api/can", .method = HTTP_POST, .handler = can_post_handler},
         {.uri = "/api/can/map", .method = HTTP_GET, .handler = can_map_get_handler},
@@ -941,9 +1106,7 @@ static void start_access_point(void)
     if (cfg->wifi_ap.ssid[0]) {
         strlcpy((char *)wc.ap.ssid, cfg->wifi_ap.ssid, sizeof(wc.ap.ssid));
     } else {
-        uint8_t mac[6];
-        ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP));
-        snprintf((char *)wc.ap.ssid, sizeof(wc.ap.ssid), RG_WIFI_AP_SSID_PREFIX "%02X%02X", mac[4], mac[5]);
+        default_ap_ssid((char *)wc.ap.ssid, sizeof(wc.ap.ssid));
     }
     wc.ap.ssid_len = strlen((char *)wc.ap.ssid);
     wc.ap.channel = 1;

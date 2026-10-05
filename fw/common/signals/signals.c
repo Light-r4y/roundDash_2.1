@@ -10,6 +10,7 @@ typedef struct {
     volatile uint32_t stamp_ms; // когда записано
     uint32_t timeout_ms;
     float min, max;
+    bool sim_exempt; // реальный источник (датчик): демо-генератор его не трогает
 } signal_t;
 
 static signal_t s_sig[RG_SIGNAL_MAX_COUNT];
@@ -104,6 +105,13 @@ void roundGauge_signal_invalidate_all(void)
     }
 }
 
+void roundGauge_signal_sim_exempt(int id)
+{
+    if (id >= 0 && id < RG_SIGNAL_MAX_COUNT) {
+        s_sig[id].sim_exempt = true;
+    }
+}
+
 void roundGauge_signal_sim_enable(bool enable)
 {
     bool was = s_sim;
@@ -113,6 +121,11 @@ void roundGauge_signal_sim_enable(bool enable)
     }
 }
 
+bool roundGauge_signal_sim_is_enabled(void)
+{
+    return s_sim;
+}
+
 void roundGauge_signal_sim_step(uint32_t t_ms)
 {
     if (!s_sim) {
@@ -120,6 +133,9 @@ void roundGauge_signal_sim_step(uint32_t t_ms)
     }
     uint32_t stamp = now_ms();
     for (int i = 0; i < s_count; i++) {
+        if (s_sig[i].sim_exempt) {
+            continue;
+        }
         // Период 5-8 с, у каждого сигнала свой, чтобы не двигались в такт.
         uint32_t period = 5000 + (uint32_t)(i % 4) * 1000;
         uint32_t t = (t_ms + (uint32_t)i * 777) % period;

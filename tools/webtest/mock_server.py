@@ -15,6 +15,8 @@
     http://localhost:8088/ota     - обновление прошивки и www
     http://localhost:8088/editor.html - редактор экранов
     http://localhost:8088/can.html - настройки CAN, привязки, сниффер
+    http://localhost:8088/imu.html - датчик: калибровка, направление, живые показания
+    http://localhost:8088/access.html - пароль на настройки и Wi-Fi точки доступа
 
 Важно:
     - Эндпоинты - те, что описаны в docs/fw-design.md §8 и которые уже ждут
@@ -44,7 +46,8 @@ WWW_DIR = os.path.join(ROOT, "fw", "www")
 VERSION_FILE = os.path.join(ROOT, "fw", "version.txt")
 OTA_PAGE_H = os.path.join(ROOT, "fw", "tasks", "webcfg", "ota_page.h")
 LAYOUT_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "layout_default.h")
-LAYOUT_JSON_MAX = 12288   # RG_LAYOUT_JSON_MAX
+LAYOUT_JSON_MAX = 16384   # RG_LAYOUT_JSON_MAX
+UI_MAX_BG_IMAGES = 4      # RG_UI_MAX_BG_IMAGES
 MEDIA_MAX_FILE = 1000000  # RG_MEDIA_MAX_FILE
 MEDIA_TOTAL = 9 * 1024 * 1024
 MEDIA_NAME_RE = re.compile(r"^(?!\.)[A-Za-z0-9._-]{1,31}$")
@@ -76,6 +79,8 @@ state = {
     "can_cfg": {"bitrate": 500000, "mode": "listen_only", "demo": False},
     "can_map": '{"version":1,"map":[]}',  # сохранённая таблица привязок (str)
     "brightness": 100,
+    "wifi": {"ssid": "", "password": "roundgauge"},
+    "imu": {"calibrated": False, "fwd": 0, "cal": "idle", "cal_t": 0.0, "detect": "idle", "detect_t": 0.0},
     "sniff_t": 0.0,             # когда веб последний раз опрашивал сниффер
 }
 
@@ -88,6 +93,9 @@ def layout_is_valid(text):
         return False
     screens = data.get("screens") if isinstance(data, dict) else None
     if not isinstance(screens, list):
+        return False
+    bg = {sc.get("bg_image") for sc in screens[:8] if isinstance(sc, dict) and sc.get("bg_image")}
+    if len(bg) > UI_MAX_BG_IMAGES:
         return False
     for sc in screens:
         if (isinstance(sc, dict) and sc.get("type") in ("dial", "ring", "number") and sc.get("signal")
@@ -155,6 +163,26 @@ def fake_frames_payload():
     return out
 
 
+def imu_payload():
+    """Как GET /api/imu: плавное движение точки; направление "вперёд" поворачивает оси."""
+    import math
+    st = state["imu"]
+    now = time.time()
+    if st["cal"] == "running" and now - st["cal_t"] > 1.2:
+        st["cal"], st["calibrated"] = "done", True
+    if st["detect"] == "armed" and now - st["detect_t"] > 3.0:
+        st["detect"], st["fwd"] = "done", (st["fwd"] + 1) % 4
+    t = now - START_TIME
+    lon0 = 0.9 * math.sin(t * 0.9) + 0.25 * math.sin(t * 2.3)
+    lat0 = 0.8 * math.sin(t * 1.3 + 1.0)
+    k = st["fwd"]  # поворот осей на 90 градусов на каждый вариант
+    lon, lat = [(lon0, lat0), (lat0, -lon0), (-lon0, -lat0), (-lat0, lon0)][k]
+    return {"ok": True, "calibrated": st["calibrated"], "fwd": st["fwd"], "cal": st["cal"], "detect": st["detect"],
+            "raw": [round(lat, 3), round(1 + 0.02 * math.sin(t), 3), round(lon, 3)],
+            "lon": round(lon, 3), "lat": round(lat, 3), "vert": round(0.05 * math.sin(t * 5), 3),
+            "tot": round(math.hypot(lon, lat), 3)}
+
+
 def can_status_payload():
     t = time.time() - START_TIME
     rx = int(sum(t / p for _, _, p, _ in _fake_bus()))
@@ -196,6 +224,7 @@ def build_status_payload():
         "uptime_s": int(time.time() - START_TIME),
         "reset_reason": 1,  # как esp_reset_reason(): 1 - включение питания
         "ap_clients": 1,
+        "heap": {"int_free": 118000, "int_min": 92000, "int_block": 61000, "psram_free": 2400000, "psram_min": 2300000},
     }
     if state["www_update"]:
         payload["www_update"] = state["www_update"]
@@ -362,8 +391,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if path == "/api/imu":
+                return self.send_json(imu_payload())
             if path == "/api/display":
                 return self.send_json({"brightness": state["brightness"]})
+            if path == "/api/wifi":
+                w = state["wifi"]
+                return self.send_json({"ssid": w["ssid"] or "roundGauge-A1B2", "default_ssid": "roundGauge-A1B2",
+                                       "custom_ssid": bool(w["ssid"]),
+                                       "password_default": w["password"] == "roundgauge"})
             if path == "/api/can":
                 return self.send_json(can_status_payload())
             if path == "/api/can/map":
@@ -419,6 +455,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self.send_text(507, "Not enough space")
                 state["media"][name] = body
                 return self.send_json({"status": "success"})
+            if path == "/api/imu/calibrate":
+                if not check_auth(self):
+                    return
+                state["imu"].update(cal="running", cal_t=time.time())
+                return self.send_json({"status": "started"})
+            if path == "/api/imu/forward":
+                if not check_auth(self):
+                    return
+                body = self.read_body(128)
+                if body is None:
+                    return
+                try:
+                    req = json.loads(body.decode("utf-8", "replace"))
+                except ValueError:
+                    return self.send_text(400, "Invalid JSON")
+                if isinstance(req.get("fwd"), int) and 0 <= req["fwd"] <= 3:
+                    state["imu"]["fwd"] = req["fwd"]
+                elif req.get("detect") is True:
+                    state["imu"].update(detect="armed", detect_t=time.time())
+                else:
+                    return self.send_text(400, "Expected fwd 0..3 or detect")
+                return self.send_json({"status": "success"})
             if path == "/api/display":
                 if not check_auth(self):
                     return
@@ -433,6 +491,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return self.send_text(400, "Brightness must be 5..100")
                 state["brightness"] = int(b)
                 return self.send_json({"status": "success"})
+            if path == "/api/wifi":
+                # Как на плате: Wi-Fi меняется только при заданном пароле на настройки.
+                if not state["auth_password"]:
+                    return self.send_text(403, "Set a settings password first")
+                if not check_auth(self):
+                    return
+                body = self.read_body(512)
+                if body is None:
+                    return
+                try:
+                    data = json.loads(body.decode("utf-8", "replace"))
+                except ValueError:
+                    data = None
+                ssid = data.get("ssid", "") if isinstance(data, dict) else None
+                pw = data.get("password") if isinstance(data, dict) else None
+                if not isinstance(ssid, str) or not isinstance(pw, str):
+                    return self.send_text(400, "Invalid body")
+                if len(ssid.encode("utf-8")) > 32 or not 8 <= len(pw) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in ssid):
+                    return self.send_text(400, "SSID up to 32 bytes, password 8..64 characters")
+                state["wifi"] = {"ssid": ssid, "password": pw}
+                return self.send_json({"status": "success", "restart": True})
             if path == "/api/auth/password":
                 if not check_auth(self):  # пока пароль есть - нужен текущий, как в прошивке
                     return

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Access</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/access.js"></script>
+</head>
+
+<body>
+    <div x-data="accessPage()" x-effect="document.title = t('title_access')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-3 mb-5" style="max-width:720px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <!-- Пароль на настройки -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-3"><i class="fas fa-key me-2"></i><span x-text="t('set_password')"></span></h6>
+                    <div class="mb-2">
+                        <span class="badge" :class="authRequired ? 'bg-success' : 'bg-secondary'"
+                            x-text="authRequired ? t('pw_on') : t('pw_off')"></span>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <input type="password" class="form-control form-control-sm" autocomplete="new-password"
+                                :placeholder="t('pw_new')" x-model="pwNew" :disabled="controlsLocked()"
+                                @keyup.enter="savePassword()">
+                        </div>
+                        <div class="col-sm-6">
+                            <input type="password" class="form-control form-control-sm" autocomplete="new-password"
+                                :placeholder="t('pw_repeat')" x-model="pwRepeat" :disabled="controlsLocked()"
+                                @keyup.enter="savePassword()">
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="button" class="btn btn-sm btn-accent"
+                            :disabled="busy || controlsLocked() || !pwNew" @click="savePassword()">
+                            <i class="fas fa-key me-1"></i><span
+                                x-text="authRequired ? t('pw_change') : t('pw_set')"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                            :disabled="busy || controlsLocked()" @click="removePassword()">
+                            <i class="fas fa-lock-open me-1"></i><span x-text="t('pw_remove')"></span>
+                        </button>
+                    </div>
+                    <div class="form-text mt-2" x-text="t('pw_hint')"></div>
+                </div>
+            </div>
+
+            <!-- Wi-Fi точка доступа -->
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="mb-3"><i class="fas fa-wifi me-2"></i><span x-text="t('wifi_title')"></span></h6>
+                    <div class="small text-fault mb-2" x-show="!authRequired" x-text="t('wifi_need_pw')"></div>
+                    <div x-show="!wifi && !wifiFailed" class="small text-muted" x-text="t('home_no_link')"></div>
+                    <template x-if="wifi">
+                        <div>
+                            <div class="mb-2">
+                                <label class="form-label small" for="wifiSsid" x-text="t('wifi_ssid')"></label>
+                                <input type="text" class="form-control form-control-sm" id="wifiSsid" maxlength="32"
+                                    autocomplete="off" x-model="wifiSsid" :placeholder="wifi.default_ssid"
+                                    :disabled="wifiLocked()">
+                                <div class="form-text" x-text="t('wifi_ssid_hint').replace('{n}', wifi.default_ssid)"></div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small" for="wifiPass" x-text="t('wifi_password')"></label>
+                                <div class="input-group input-group-sm">
+                                    <input :type="wifiShow ? 'text' : 'password'" class="form-control" id="wifiPass"
+                                        maxlength="64" autocomplete="new-password" x-model="wifiPass"
+                                        :placeholder="t('wifi_password_ph')" :disabled="wifiLocked()"
+                                        @keyup.enter="saveWifi()">
+                                    <button type="button" class="btn btn-outline-secondary" @click="wifiShow = !wifiShow">
+                                        <i class="fas" :class="wifiShow ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                    </button>
+                                </div>
+                                <div class="form-text text-fault" x-show="wifi.password_default"
+                                    x-text="t('wifi_pass_default')"></div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-accent"
+                                :disabled="busy || wifiLocked() || !wifiPass" @click="saveWifi()">
+                                <i class="fas fa-floppy-disk me-1"></i><span x-text="t('wifi_save')"></span>
+                            </button>
+                            <div class="form-text mt-2" x-text="t('wifi_restart_note')"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i><span
+                    x-text="t('access_reset_hint')"></span></div>
+        </div>
+    </div>
+</body>
+
+</html>

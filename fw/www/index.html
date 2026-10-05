@@ -77,28 +77,42 @@
 
             <!-- Разделы -->
             <div class="row g-3 mb-3">
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md">
                     <a href="/editor.html" class="tile">
                         <i class="fas fa-sliders tile-icon"></i>
                         <div class="tile-title" x-text="t('nav_editor')"></div>
                         <div class="tile-sub" x-text="subScreens()"></div>
                     </a>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md">
                     <a href="/media.html" class="tile">
                         <i class="fas fa-image tile-icon"></i>
                         <div class="tile-title" x-text="t('nav_media')"></div>
                         <div class="tile-sub" x-text="subMedia()"></div>
                     </a>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md">
                     <a href="/can.html" class="tile">
                         <i class="fas fa-plug tile-icon"></i>
                         <div class="tile-title" x-text="t('nav_can')"></div>
                         <div class="tile-sub" x-text="subCan()"></div>
                     </a>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md">
+                    <a href="/imu.html" class="tile">
+                        <i class="fas fa-compass tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_imu')"></div>
+                        <div class="tile-sub" x-text="subImu()"></div>
+                    </a>
+                </div>
+                <div class="col-6 col-md">
+                    <a href="/access.html" class="tile">
+                        <i class="fas fa-key tile-icon"></i>
+                        <div class="tile-title" x-text="t('nav_access')"></div>
+                        <div class="tile-sub" x-text="authRequired ? t('tile_access_on') : t('tile_access_off')"></div>
+                    </a>
+                </div>
+                <div class="col-6 col-md">
                     <a href="/ota" class="tile">
                         <i class="fas fa-cloud-upload-alt tile-icon"></i>
                         <div class="tile-title" x-text="t('nav_update')"></div>
@@ -129,6 +143,8 @@
                                             <span class="badge" :class="canClass()" x-text="canLabel()"></span>
                                             <span class="small text-muted ms-1" x-show="can && can.node_up"
                                                 x-text="canRate + ' ' + t('can_fps')"></span></span></div>
+                                    <div class="kv" x-show="status.heap"><span class="k" x-text="t('st_heap')"></span><span
+                                            x-text="heapText()"></span></div>
                                     <div class="kv" x-show="media"><span class="k" x-text="t('st_media')"></span><span
                                             x-text="media ? fmtSize(media.used) + ' / ' + fmtSize(media.total) : ''"></span>
                                     </div>
@@ -156,38 +172,13 @@
                                     x-text="brightness === null ? '-' : brightness + ' %'"></span>
                             </div>
 
-                            <!-- Пароль -->
-                            <label class="form-label small mb-1" x-text="t('set_password')"></label>
-                            <div class="mb-2">
-                                <span class="badge" :class="authRequired ? 'bg-success' : 'bg-secondary'"
+                            <!-- Пароль и Wi-Fi - на отдельной странице -->
+                            <a href="/access.html" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-key me-1"></i><span x-text="t('nav_access')"></span>
+                                <span class="badge ms-1" :class="authRequired ? 'bg-success' : 'bg-secondary'"
                                     x-text="authRequired ? t('pw_on') : t('pw_off')"></span>
-                            </div>
-                            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')">
-                            </div>
-                            <div class="row g-2">
-                                <div class="col-sm-6">
-                                    <input type="password" class="form-control form-control-sm" autocomplete="new-password"
-                                        :placeholder="t('pw_new')" x-model="pwNew" :disabled="controlsLocked()"
-                                        @keyup.enter="savePassword()">
-                                </div>
-                                <div class="col-sm-6">
-                                    <input type="password" class="form-control form-control-sm" autocomplete="new-password"
-                                        :placeholder="t('pw_repeat')" x-model="pwRepeat" :disabled="controlsLocked()"
-                                        @keyup.enter="savePassword()">
-                                </div>
-                            </div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button type="button" class="btn btn-sm btn-accent"
-                                    :disabled="busy || controlsLocked() || !pwNew" @click="savePassword()">
-                                    <i class="fas fa-key me-1"></i><span
-                                        x-text="authRequired ? t('pw_change') : t('pw_set')"></span>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
-                                    :disabled="busy || controlsLocked()" @click="removePassword()">
-                                    <i class="fas fa-lock-open me-1"></i><span x-text="t('pw_remove')"></span>
-                                </button>
-                            </div>
-                            <div class="form-text mt-2" x-text="t('pw_hint')"></div>
+                            </a>
+                            <div class="form-text mt-2" x-text="t('access_link_hint')"></div>
                         </div>
                     </div>
                 </div>

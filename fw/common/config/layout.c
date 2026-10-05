@@ -251,6 +251,8 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
         s->type = RG_SCREEN_RING;
     } else if (strcmp(type->valuestring, "number") == 0) {
         s->type = RG_SCREEN_NUMBER;
+    } else if (strcmp(type->valuestring, "gmeter") == 0) {
+        s->type = RG_SCREEN_GMETER;
     } else {
         ESP_LOGW(TAG, "unknown screen type \"%s\"", type->valuestring);
         return false;
@@ -268,13 +270,46 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
     s->label_div = 1;
     s->needle_color = 0xFF8000;
     s->needle_width = 6;
+    s->needle_px = -1;
+    s->needle_py = -1;
     s->ring_width = 36;
+    s->g_range = 1.5f;
+    s->g_step = 0.5f;
+    s->trail = 8;
+    s->peaks = true;
+    s->felt = true;
+    if (s->type == RG_SCREEN_GMETER) {
+        s->color = 0x00C0FF;      // точка
+        s->text_color = 0x505050; // сетка
+        strlcpy(s->signal, "g_lon", sizeof(s->signal));
+        strlcpy(s->signal2, "g_lat", sizeof(s->signal2));
+    }
 
     get_str(j, "signal", s->signal, sizeof(s->signal));
+    get_str(j, "signal2", s->signal2, sizeof(s->signal2));
     if (s->signal[0] == '\0') {
         ESP_LOGW(TAG, "screen needs \"signal\"");
         return false;
     }
+
+    get_float(j, "g_range", &s->g_range);
+    get_float(j, "g_step", &s->g_step);
+    if (!(s->g_range >= 0.5f && s->g_range <= 8.0f)) {
+        s->g_range = 1.5f;
+    }
+    if (!(s->g_step >= s->g_range / 8.0f)) { // не больше 8 колец
+        s->g_step = s->g_range / 8.0f;
+    }
+    if (s->g_step > s->g_range) {
+        s->g_step = s->g_range;
+    }
+    {
+        int tr = s->trail;
+        get_int(j, "trail", 0, RG_LAYOUT_MAX_TRAIL, &tr);
+        s->trail = (uint8_t)tr;
+    }
+    get_bool(j, "peaks", &s->peaks);
+    get_bool(j, "felt", &s->felt);
 
     // Свой диапазон экрана - необязателен; по умолчанию его даёт сигнал.
     const cJSON *mn = cJSON_GetObjectItemCaseSensitive(j, "min");
@@ -296,6 +331,8 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
     v = s->ticks;        get_int(j, "ticks", 2, 101, &v);        s->ticks = (uint8_t)v;
     v = s->major_every;  get_int(j, "major_every", 1, 100, &v);  s->major_every = (uint8_t)v;
     v = s->needle_width; get_int(j, "needle_width", 1, 40, &v);  s->needle_width = (uint8_t)v;
+    v = s->needle_px;    get_int(j, "needle_px", -1, 2000, &v);  s->needle_px = (int16_t)v;
+    v = s->needle_py;    get_int(j, "needle_py", -1, 2000, &v);  s->needle_py = (int16_t)v;
     v = s->ring_width;   get_int(j, "ring_width", 4, 120, &v);   s->ring_width = (uint8_t)v;
 
     // Подписей на шкале не больше RG_LAYOUT_MAX_LABELS: растим шаг крупных делений.
@@ -528,6 +565,26 @@ void roundGauge_layout_reload(void)
     s_generation++;
 }
 
+// Число разных файлов фона в раскладке (пустое имя не считается).
+static size_t count_distinct_bg(const roundGauge_layout_t *l)
+{
+    size_t n = 0;
+    for (size_t i = 0; i < l->count; i++) {
+        const char *f = l->screens[i].bg_image;
+        if (f[0] == '\0') {
+            continue;
+        }
+        bool seen = false;
+        for (size_t k = 0; k < i && !seen; k++) {
+            seen = strcmp(l->screens[k].bg_image, f) == 0;
+        }
+        if (!seen) {
+            n++;
+        }
+    }
+    return n;
+}
+
 esp_err_t roundGauge_layout_apply_json(const char *json)
 {
     size_t len = json ? strlen(json) : 0;
@@ -540,7 +597,12 @@ esp_err_t roundGauge_layout_apply_json(const char *json)
     }
     esp_err_t err = ESP_ERR_INVALID_ARG;
     if (parse(json, l)) {
-        err = nvs_save_json(json);
+        if (count_distinct_bg(l) > RG_UI_MAX_BG_IMAGES) {
+            // Только при сохранении из веба: уже лежащую в NVS раскладку не трогаем.
+            ESP_LOGW(TAG, "Layout rejected: more than %d distinct background images", RG_UI_MAX_BG_IMAGES);
+        } else {
+            err = nvs_save_json(json);
+        }
         if (err == ESP_OK) {
             set_current(l);
             ESP_LOGI(TAG, "Layout applied: %u screens, %u signals", (unsigned)l->count, (unsigned)l->signal_count);

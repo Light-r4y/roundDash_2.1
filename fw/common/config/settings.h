@@ -11,6 +11,7 @@
 //   "version": 1,
 //   "can":     { "bitrate": 500000, "mode": "listen_only", "demo": false },
 //   "display": { "brightness": 100 },
+//   "imu":     { "calibrated": false, "g0": [0, 0, 1], "fwd": 0 },
 //   "wifi_ap": { "ssid": "", "password": "roundgauge" }
 // }
 //
@@ -41,9 +42,16 @@ typedef struct {
 } roundGauge_display_settings_t;
 
 typedef struct {
+    bool calibrated;
+    float g0[3];  // сила тяжести в осях платы при калибровке, g - направлена "вверх"
+    uint8_t fwd;  // вариант "вперёд", 0..3 (tasks/imu/imu_math.h)
+} roundGauge_imu_settings_t;
+
+typedef struct {
     uint32_t version;
     roundGauge_can_settings_t can;
     roundGauge_display_settings_t display;
+    roundGauge_imu_settings_t imu;
     roundGauge_wifi_ap_settings_t wifi_ap;
 } roundGauge_settings_t;
 
@@ -64,6 +72,16 @@ void roundGauge_settings_get_can(roundGauge_can_settings_t *out);
 esp_err_t roundGauge_settings_set_can(const roundGauge_can_settings_t *can);
 
 // То же для раздела display (яркость): применяется сразу, без перезагрузки.
+void roundGauge_settings_get_imu(roundGauge_imu_settings_t *out);
+esp_err_t roundGauge_settings_set_imu(const roundGauge_imu_settings_t *imu);
+
+// Параметры точки доступа. Меняются в NVS и в настройках сразу, но уже поднятая точка
+// живёт со старыми до перезагрузки.
+void roundGauge_settings_get_wifi(roundGauge_wifi_ap_settings_t *out);
+esp_err_t roundGauge_settings_set_wifi(const roundGauge_wifi_ap_settings_t *w);
+// Имя по MAC и пароль по умолчанию.
+esp_err_t roundGauge_settings_reset_wifi(void);
+
 void roundGauge_settings_get_display(roundGauge_display_settings_t *out);
 esp_err_t roundGauge_settings_set_display(const roundGauge_display_settings_t *d);
 

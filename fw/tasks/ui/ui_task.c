@@ -11,6 +11,7 @@
 #include "webcfg_task.h"
 #include "esp_spiffs.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -288,6 +289,16 @@ static void ap_overlay_update(void)
     }
 }
 
+// Сколько памяти осталось после сборки экранов: по этим строкам видно запас под ещё экраны.
+static void log_heap(const char *when)
+{
+    ESP_LOGI(TAG, "Heap %s: internal free %u (min %u, largest block %u), PSRAM free %u",
+             when, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
+
 static void layout_rebuild(void)
 {
     // ~2.5 КБ - в куче, не на стеке задачи.
@@ -301,6 +312,7 @@ static void layout_rebuild(void)
     ui_screens_rebuild(l);
     lvgl_port_unlock();
     free(l);
+    log_heap("after screens build");
 }
 
 static void ui_task(void *arg)

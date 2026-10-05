@@ -20,7 +20,7 @@
 //       "bg_color": "#000000", "bg_image": "",
 //       "color": "#ffffff", "text_color": "#ffffff",
 //       "angle": 270, "rotation": 135, "ticks": 41, "major_every": 5, "label_div": 1000,
-//       "needle_color": "#ff8000", "needle_width": 6, "needle_image": "",
+//       "needle_color": "#ff8000", "needle_width": 6, "needle_image": "", "needle_px": -1, "needle_py": -1,
 //       "markers": [ { "value": 7000, "color": "#ff0000" } ],
 //       "widgets": [
 //         { "type": "value", "x": 0, "y": 60, "font": "48" },
@@ -29,7 +29,7 @@
 // }
 //
 // Экран = основной виджет ("dial" - циферблат, "ring" - заполнение по окружности,
-// "number" - только число; он рисует графику вокруг центра) + до
+// "number" - только число, "gmeter" - перегрузки; он рисует графику вокруг центра) + до
 // RG_LAYOUT_MAX_WIDGETS дополнительных: value, text, image, indicator, bar, arc.
 // Координаты x, y - пиксели от центра экрана, элемент центрируется в этой точке.
 //
@@ -43,12 +43,14 @@
 #define RG_LAYOUT_MAX_MARKERS 4
 #define RG_LAYOUT_MAX_LABELS 16
 #define RG_LAYOUT_MAX_WIDGETS 4
+#define RG_LAYOUT_MAX_TRAIL 12
 #define RG_LAYOUT_MAX_SIGNALS 16 // = RG_SIGNAL_MAX_COUNT (common/signals)
 
 typedef enum {
     RG_SCREEN_DIAL = 0,
     RG_SCREEN_RING,
     RG_SCREEN_NUMBER,
+    RG_SCREEN_GMETER, // перегрузки: точка на круговой сетке, сигналы signal (вперёд-назад) и signal2 (влево-вправо)
 } roundGauge_screen_type_t;
 
 typedef enum {
@@ -103,6 +105,7 @@ typedef struct {
 typedef struct {
     roundGauge_screen_type_t type;
     char signal[16];
+    char signal2[16];  // gmeter: второй сигнал (влево-вправо)
     bool has_range;    // min/max экрана вместо диапазона сигнала
     float min, max;
     uint32_t bg_color, color, text_color;
@@ -116,6 +119,15 @@ typedef struct {
     uint32_t needle_color;
     uint8_t needle_width;
     char needle_image[32];
+    // Ось вращения картинки-стрелки: точка картинки (px от левого верхнего угла), которая
+    // ставится в центр шкалы. Меньше 0 - по оси "авто": x = 0, y = середина высоты.
+    int16_t needle_px, needle_py;
+    // gmeter: color - точка, text_color - сетка
+    float g_range;     // шкала до внешнего кольца, g
+    float g_step;      // шаг колец, g
+    uint8_t trail;     // точек шлейфа, 0..RG_LAYOUT_MAX_TRAIL
+    bool peaks;        // метки максимумов по четырём направлениям
+    bool felt;         // точка показывает силу, которую чувствует водитель (торможение - вверх)
     // ring
     uint8_t ring_width;
     uint8_t zone_count, marker_count; // zone_count > 0 - зоны экрана вместо зон сигнала

@@ -2,7 +2,7 @@
 // дополнительными виджетами, см. common/config/layout.h), показывает предпросмотр на
 // canvas с перетаскиванием виджетов и отправляет результат на плату.
 // Значения по умолчанию и пределы здесь должны совпадать с layout.c / conf.h.
-const RG_LIMITS = { screens: 4, widgets: 4, signals: 16, zones: 4, markers: 4, json: 12288 };
+const RG_LIMITS = { screens: 8, widgets: 4, signals: 16, zones: 4, markers: 4, json: 16384, bgImages: 4 };
 const RG_SWEEP_MS = 5000;
 const RG_SEC_KEY = 'rg_editor_sections';
 // Основное открыто, тонкие настройки свёрнуты.
@@ -14,8 +14,15 @@ const RG_SCREEN_DEFAULTS = {
     type: 'dial', signal: '', has_range: false, min: 0, max: 100,
     bg_color: '#000000', bg_image: '', color: '#ffffff', text_color: '#ffffff',
     angle: 270, rotation: 135, ticks: 41, major_every: 5, label_div: 1,
-    needle_color: '#ff8000', needle_width: 6, needle_image: '', ring_width: 36,
+    needle_color: '#ff8000', needle_width: 6, needle_image: '', needle_px: -1, needle_py: -1, ring_width: 36,
+    signal2: 'g_lat', g_range: 1.5, g_step: 0.5, trail: 8, peaks: true, felt: true,
 };
+// Отличия по типам - как в parse_screen (layout.c): у д-метра цвет - точка, text_color - сетка.
+const RG_SCREEN_TYPE_DEFAULTS = {
+    gmeter: { color: '#00c0ff', text_color: '#505050' },
+};
+const rgScreenDefault = (type, key) => (RG_SCREEN_TYPE_DEFAULTS[type] && key in RG_SCREEN_TYPE_DEFAULTS[type])
+    ? RG_SCREEN_TYPE_DEFAULTS[type][key] : RG_SCREEN_DEFAULTS[key];
 
 const RG_WIDGET_DEFAULTS = {
     type: 'value', x: 0, y: 0, w: 0, h: 0, signal: '', font: '', text: '', image: '',
@@ -42,15 +49,20 @@ const RG_WIDGET_FIELDS = {
 };
 const RG_SCREEN_FIELDS = {
     dial: ['bg_color', 'bg_image', 'color', 'text_color', 'angle', 'rotation', 'ticks', 'major_every', 'label_div',
-           'needle_color', 'needle_width', 'needle_image'],
+           'needle_color', 'needle_width', 'needle_image', 'needle_px', 'needle_py'],
     ring: ['bg_color', 'bg_image', 'color', 'text_color', 'angle', 'rotation', 'ring_width'],
     number: ['bg_color', 'bg_image', 'color', 'text_color'],
+    gmeter: ['bg_color', 'bg_image', 'color', 'text_color', 'signal2', 'g_range', 'g_step', 'trail', 'peaks', 'felt'],
 };
 
 // Картинки предпросмотра живут вне реактивного состояния Alpine (канвасы не нужно проксировать).
 const rgImages = {};
+let rgPivotGeom = null; // масштаб и смещение картинки на холсте оси вращения
 const rgPending = new Set(); // имена, которые уже качаются
 let rgValues = {};           // значения сигналов для предпросмотра
+
+// Шлейф и максимумы д-метра в предпросмотре ведёт RgGauge.gmeterTrack.
+const rgGm = {};
 
 const rgWidgetDefault = (type, key) => (RG_WIDGET_TYPE_DEFAULTS[type] && key in RG_WIDGET_TYPE_DEFAULTS[type])
     ? RG_WIDGET_TYPE_DEFAULTS[type][key] : RG_WIDGET_DEFAULTS[key];
@@ -74,7 +86,7 @@ function rgNormWidget(raw) {
 
 function rgNormScreen(raw) {
     raw = rgClean(raw);
-    const sc = Object.assign({}, RG_SCREEN_DEFAULTS, raw);
+    const sc = Object.assign({}, RG_SCREEN_DEFAULTS, RG_SCREEN_TYPE_DEFAULTS[raw.type], raw);
     sc.has_range = typeof raw.min === 'number' && typeof raw.max === 'number' && raw.max > raw.min;
     sc.zones = (raw.zones || []).slice(0, RG_LIMITS.zones).map(z => ({
         from: z.from ?? sc.min, to: z.to ?? sc.max, color: z.color || sc.color }));
@@ -137,7 +149,7 @@ function rgSerialize(layout) {
         const o = { type: sc.type, signal: sc.signal };
         if (sc.has_range) { o.min = sc.min; o.max = sc.max; }
         for (const k of RG_SCREEN_FIELDS[sc.type]) {
-            if (sc[k] !== RG_SCREEN_DEFAULTS[k] && sc[k] !== '') o[k] = sc[k];
+            if (sc[k] !== rgScreenDefault(sc.type, k) && sc[k] !== '') o[k] = sc[k];
         }
         if (sc.zones.length) o.zones = sc.zones.map(z => ({ from: z.from, to: z.to, color: z.color }));
         if (sc.type === 'dial' && sc.markers.length) o.markers = sc.markers.map(m => ({ value: m.value, color: m.color }));
@@ -198,7 +210,12 @@ function editorPage() {
         get screen() { return this.layout.screens[this.sel] || null; },
         get widget() { return this.screen && this.screen.widgets[this.selW] || null; },
         get jsonSize() { return new Blob([rgSerialize(this.layout)]).size; },
-        get tooBig() { return this.jsonSize > RG_LIMITS.json; },
+        // Разные файлы фона на всех экранах: кэш картинок платы вмещает около шести, лимит - 4.
+        get bgFiles() { return [...new Set(this.layout.screens.map((s) => s.bg_image).filter(Boolean))]; },
+        get bgOver() { return this.bgFiles.length > RG_LIMITS.bgImages; },
+        // Новый файл выбрать нельзя, если набор полон, а он в нём ещё не используется.
+        bgBlocked(name) { return !!name && this.bgFiles.length >= RG_LIMITS.bgImages && !this.bgFiles.includes(name); },
+        get tooBig() { return this.jsonSize > RG_LIMITS.json || this.bgOver; },
         get limits() { return RG_LIMITS; },
 
         // ---- секции ----
@@ -263,6 +280,83 @@ function editorPage() {
             }
         },
 
+        // ---- ось вращения картинки-стрелки ----
+        // Картинка стрелки крупно, с перекрестием в точке оси: нажать или вести пальцем/мышью -
+        // ось встаёт в эту точку (грубо), числа справа дают точное значение. -1 - авто:
+        // слева по центру, как было до появления настройки.
+        pivotImage() {
+            const sc = this.screen;
+            return sc && sc.type === 'dial' && sc.needle_image ? rgImages[sc.needle_image] || null : null;
+        },
+        pivotAxis(sc, img) {
+            return { x: sc.needle_px >= 0 ? Math.min(sc.needle_px, img.width) : 0,
+                     y: sc.needle_py >= 0 ? Math.min(sc.needle_py, img.height) : Math.round(img.height / 2) };
+        },
+        drawPivot(canvas, sc, img) {
+            const W = canvas.width, H = canvas.height;
+            const k = Math.min((W - 16) / img.width, (H - 16) / img.height, 6);
+            const ox = Math.round((W - img.width * k) / 2), oy = Math.round((H - img.height * k) / 2);
+            rgPivotGeom = { k, ox, oy };
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, W, H);
+            const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+            ctx.fillStyle = dark ? '#262a2f' : '#eef2f8';
+            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = dark ? '#34383f' : '#dbe3ef';
+            const cell = 8;
+            for (let y = 0; y * cell < img.height * k; y++) {
+                for (let x = 0; x * cell < img.width * k; x++) {
+                    if ((x + y) % 2) ctx.fillRect(ox + x * cell, oy + y * cell,
+                        Math.min(cell, img.width * k - x * cell), Math.min(cell, img.height * k - y * cell));
+                }
+            }
+            ctx.imageSmoothingEnabled = k < 1;
+            ctx.drawImage(img, ox, oy, img.width * k, img.height * k);
+            ctx.strokeStyle = dark ? '#555c66' : '#b6c2d4';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(ox - 0.5, oy - 0.5, img.width * k + 1, img.height * k + 1);
+            const a = this.pivotAxis(sc, img);
+            const px = ox + a.x * k, py = oy + a.y * k;
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ff2d55';
+            ctx.beginPath();
+            ctx.moveTo(px - 14, py); ctx.lineTo(px + 14, py);
+            ctx.moveTo(px, py - 14); ctx.lineTo(px, py + 14);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(px, py, 6, 0, Math.PI * 2);
+            ctx.stroke();
+        },
+        pivotPick(ev) {
+            const sc = this.screen, img = this.pivotImage();
+            if (!sc || !img || !rgPivotGeom) return;
+            const canvas = ev.currentTarget, rect = canvas.getBoundingClientRect();
+            const x = (ev.clientX - rect.left) * canvas.width / rect.width;
+            const y = (ev.clientY - rect.top) * canvas.height / rect.height;
+            const clamp = (v, max) => Math.max(0, Math.min(max, Math.round(v)));
+            sc.needle_px = clamp((x - rgPivotGeom.ox) / rgPivotGeom.k, img.width - 1);
+            sc.needle_py = clamp((y - rgPivotGeom.oy) / rgPivotGeom.k, img.height - 1);
+            this.changed();
+        },
+        pivotDown(ev) {
+            ev.currentTarget.setPointerCapture(ev.pointerId);
+            this.pivotPick(ev);
+        },
+        pivotMove(ev) {
+            if (ev.buttons) this.pivotPick(ev);
+        },
+        // Пусто или меньше нуля - авто.
+        pivotInput(key, ev) {
+            const v = parseInt(ev.target.value, 10);
+            this.screen[key] = Number.isNaN(v) || v < 0 ? -1 : Math.min(v, 2000);
+            this.changed();
+        },
+        pivotAuto() {
+            this.screen.needle_px = -1;
+            this.screen.needle_py = -1;
+            this.changed();
+        },
+
         // ---- предпросмотр ----
         // Все сигналы качаются треугольной волной в своём диапазоне (как генератор
         // в прошивке); без качания - значения с ползунков.
@@ -270,6 +364,8 @@ function editorPage() {
             const sc = this.screen;
             const canvas = this.$refs.preview;
             if (!sc || !canvas) return;
+            const pc = this.$refs.pivot, pimg = pc && this.pivotImage();
+            if (pimg) this.drawPivot(pc, sc, pimg);
             const values = {};
             this.layout.signals.forEach((s, i) => {
                 if (this.sweep) {
@@ -281,7 +377,8 @@ function editorPage() {
                 }
             });
             rgValues = values;
-            RgGauge.draw(canvas, this.layout, sc, values, rgImages, this.selW, true);
+            if (sc.type === 'gmeter') RgGauge.gmeterTrack(rgGm, sc, values, t);
+            RgGauge.draw(canvas, this.layout, sc, values, rgImages, this.selW, true, rgGm);
         },
 
         // Сигналы, которые использует экран (основной и виджетов) - для ползунков.
@@ -289,6 +386,7 @@ function editorPage() {
             const sc = this.screen;
             if (!sc) return [];
             const names = [sc.signal];
+            if (sc.type === 'gmeter' && sc.signal2) names.push(sc.signal2);
             for (const w of sc.widgets) if (w.signal) names.push(w.signal);
             return [...new Set(names)].map(n => this.layout.signals.find(s => s.name === n)).filter(Boolean);
         },
@@ -386,7 +484,27 @@ function editorPage() {
         },
 
         // ---- экраны ----
+        // Д-метр: сигналы g_* заводятся, если их ещё нет (до лимита), и четыре числа по умолчанию.
+        newGmeterScreen() {
+            const defs = [['g_lon', 'G LON', -1.5, 1.5], ['g_lat', 'G LAT', -1.5, 1.5], ['g_vert', 'G VERT', -1, 1],
+                          ['g_tot', 'G', 0, 2]];
+            for (const [name, title, min, max] of defs) {
+                if (!this.hasSignal(name) && this.layout.signals.length < RG_LIMITS.signals) {
+                    this.layout.signals.push(rgNormSignal({ name, title, unit: 'g', min, max, decimals: 2 }));
+                }
+            }
+            const sc = rgNormScreen({ type: 'gmeter', signal: 'g_lon', signal2: 'g_lat' });
+            sc.widgets = [
+                rgNormWidget({ type: 'value', signal: 'g_tot', x: 0, y: 125 }),
+                rgNormWidget({ type: 'value', signal: 'g_lon', x: -100, y: -125, font: '28' }),
+                rgNormWidget({ type: 'value', signal: 'g_lat', x: 100, y: -125, font: '28' }),
+                rgNormWidget({ type: 'value', signal: 'g_vert', x: 0, y: 170, font: '28' }),
+            ];
+            return sc;
+        },
+
         newScreen(type) {
+            if (type === 'gmeter') return this.newGmeterScreen();
             if (!this.layout.signals.length) this.addSignal();
             const sig = this.layout.signals[0];
             const sc = rgNormScreen({ type, signal: sig.name });

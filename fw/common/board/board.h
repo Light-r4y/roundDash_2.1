@@ -42,6 +42,7 @@
 #include "esp_err.h"
 #include "esp_lcd_types.h"
 #include "esp_lcd_touch.h"
+#include "driver/i2c_master.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -128,6 +129,9 @@ esp_lcd_panel_handle_t roundGauge_board_lcd_panel(void);
 // Тач CST820 (драйвер CST816S), прерывание на RG_PIN_TOUCH_INT. Без тача (RG_HAS_TOUCH=0)
 // не инициализируется, возвращает NULL.
 esp_lcd_touch_handle_t roundGauge_board_touch(void);
+
+// Общая шина I2C платы (тач, TCA9554, RTC, IMU): устройства на ней добавляют сами пользователи.
+i2c_master_bus_handle_t roundGauge_board_i2c(void);
 
 // Яркость подсветки, 0-100 %.
 esp_err_t roundGauge_board_backlight_set(uint8_t pct);

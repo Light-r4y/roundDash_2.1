@@ -41,7 +41,12 @@ void roundGauge_signal_invalidate_all(void);
 
 // Тестовый генератор ("демо"): пока включён, все зарегистрированные сигналы гоняются
 // треугольной волной в своём диапазоне. Выключение сбрасывает значения.
+// Сигнал с реальным источником (акселерометр): демо-генератор его не перезаписывает.
+void roundGauge_signal_sim_exempt(int id);
 void roundGauge_signal_sim_enable(bool enable);
+
+// Включён ли генератор: источники значений (can_task, imu_task) при нём ничего не пишут.
+bool roundGauge_signal_sim_is_enabled(void);
 
 // Шаг генератора; вызывать раз в такт из ui_task. Выключен - ничего не делает.
 void roundGauge_signal_sim_step(uint32_t now_ms);

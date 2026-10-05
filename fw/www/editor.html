@@ -96,6 +96,10 @@
                 <span class="small" :class="tooBig ? 'text-fault' : 'text-muted'">
                     <span x-text="jsonSize"></span> / <span x-text="limits.json"></span> B
                 </span>
+                <span class="small" :class="bgOver ? 'text-fault' : 'text-muted'"
+                    :title="t('ed_bg_limit_hint')">
+                    <i class="far fa-image me-1"></i><span x-text="bgFiles.length"></span> / <span x-text="limits.bgImages"></span>
+                </span>
                 <span class="small text-fault" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></span>
             </div>
             <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
@@ -160,7 +164,7 @@
                             </div>
                             <div class="d-flex flex-wrap gap-2">
                                 <div class="btn-group btn-group-sm">
-                                    <template x-for="t_ in ['dial', 'ring', 'number']" :key="t_">
+                                    <template x-for="t_ in ['dial', 'ring', 'number', 'gmeter']" :key="t_">
                                         <button type="button" class="btn btn-outline-secondary" @click="addScreen(t_)"
                                             :disabled="layout.screens.length >= limits.screens"><i
                                                 class="fas fa-plus me-1"></i><span x-text="typeLabel(t_)"></span></button>
@@ -195,10 +199,12 @@
                                                 <option value="dial" x-text="t('ed_type_dial')"></option>
                                                 <option value="ring" x-text="t('ed_type_ring')"></option>
                                                 <option value="number" x-text="t('ed_type_number')"></option>
+                                                <option value="gmeter" x-text="t('ed_type_gmeter')"></option>
                                             </select>
                                         </div>
                                         <div class="col-6 col-md-4">
-                                            <label class="form-label small" x-text="t('ed_signal')"></label>
+                                            <label class="form-label small"
+                                                x-text="screen.type === 'gmeter' ? t('ed_signal_lon') : t('ed_signal')"></label>
                                             <select class="form-select form-select-sm" x-model="screen.signal">
                                                 <template x-if="!hasSignal(screen.signal)">
                                                     <option :value="screen.signal" selected
@@ -212,12 +218,28 @@
                                             <div class="form-text text-fault" x-show="!hasSignal(screen.signal)"
                                                 x-text="t('ed_sig_missing')"></div>
                                         </div>
+                                        <template x-if="screen.type === 'gmeter'">
+                                            <div class="col-6 col-md-4">
+                                                <label class="form-label small" x-text="t('ed_signal_lat')"></label>
+                                                <select class="form-select form-select-sm" x-model="screen.signal2">
+                                                    <template x-if="!hasSignal(screen.signal2)">
+                                                        <option :value="screen.signal2" selected
+                                                            x-text="screen.signal2 + ' ⚠'"></option>
+                                                    </template>
+                                                    <template x-for="n in sigNames()" :key="n">
+                                                        <option :value="n" x-text="n" :selected="n === screen.signal2">
+                                                        </option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </template>
                                         <div class="col-12 col-md-4">
                                             <label class="form-label small" x-text="t('ed_bg_image')"></label>
                                             <select class="form-select form-select-sm" x-model="screen.bg_image">
                                                 <option value="" x-text="t('ed_none')"></option>
                                                 <template x-for="f in imageOptions()" :key="f.name">
                                                     <option :value="f.name" x-text="f.name"
+                                                        :disabled="bgBlocked(f.name)"
                                                         :selected="f.name === screen.bg_image"></option>
                                                 </template>
                                             </select>
@@ -228,12 +250,14 @@
                                                 x-model="screen.bg_color">
                                         </div>
                                         <div class="col-4 col-md-3">
-                                            <label class="form-label small" x-text="t('ed_color')"></label>
+                                            <label class="form-label small"
+                                                x-text="screen.type === 'gmeter' ? t('ed_dot_color') : t('ed_color')"></label>
                                             <input type="color" class="form-control form-control-color w-100"
                                                 x-model="screen.color">
                                         </div>
-                                        <div class="col-4 col-md-3" x-show="screen.type === 'dial'">
-                                            <label class="form-label small" x-text="t('ed_text_color')"></label>
+                                        <div class="col-4 col-md-3" x-show="screen.type === 'dial' || screen.type === 'gmeter'">
+                                            <label class="form-label small"
+                                                x-text="screen.type === 'gmeter' ? t('ed_grid_color') : t('ed_text_color')"></label>
                                             <input type="color" class="form-control form-control-color w-100"
                                                 x-model="screen.text_color">
                                         </div>
@@ -245,9 +269,46 @@
                                             <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
                                                 @click="toggleSec('scale')">
                                                 <i class="fas" :class="isOpen('scale') ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-                                                <span x-text="screen.type === 'dial' ? t('ed_sec_scale_dial') : t('ed_sec_scale_ring')"></span>
+                                                <span x-text="screen.type === 'dial' ? t('ed_sec_scale_dial') : (screen.type === 'ring' ? t('ed_sec_scale_ring') : t('ed_sec_gmeter'))"></span>
                                             </button>
                                             <div class="mt-2" x-show="isOpen('scale')">
+                                                <template x-if="screen.type === 'gmeter'">
+                                                    <div class="row g-2">
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_g_range')"></label>
+                                                            <input type="number" min="0.5" max="8" step="0.5"
+                                                                class="form-control form-control-sm" :value="screen.g_range"
+                                                                @input="numberInput(screen, 'g_range', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_g_step')"></label>
+                                                            <input type="number" min="0.1" max="8" step="0.1"
+                                                                class="form-control form-control-sm" :value="screen.g_step"
+                                                                @input="numberInput(screen, 'g_step', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_trail')"></label>
+                                                            <input type="number" min="0" max="12"
+                                                                class="form-control form-control-sm" :value="screen.trail"
+                                                                @input="numberInput(screen, 'trail', $event)">
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <div class="form-check form-switch mb-1">
+                                                                <input class="form-check-input" type="checkbox" id="gmpeaks"
+                                                                    x-model="screen.peaks">
+                                                                <label class="form-check-label" for="gmpeaks"
+                                                                    x-text="t('ed_g_peaks')"></label>
+                                                            </div>
+                                                            <div class="form-check form-switch">
+                                                                <input class="form-check-input" type="checkbox" id="gmfelt"
+                                                                    x-model="screen.felt">
+                                                                <label class="form-check-label" for="gmfelt"
+                                                                    x-text="t('ed_g_felt')"></label>
+                                                            </div>
+                                                            <div class="form-text" x-text="t('ed_g_hint')"></div>
+                                                        </div>
+                                                    </div>
+                                                </template>
                                                 <template x-if="screen.type === 'dial'">
                                                     <div class="row g-2">
                                                         <div class="col-6 col-md-3">
@@ -306,6 +367,44 @@
                                                             </select>
                                                             <div class="form-text" x-text="t('ed_needle_hint')"></div>
                                                         </div>
+                                                        <div class="col-12" x-show="pivotImage()">
+                                                            <label class="form-label small" x-text="t('ed_pivot')"></label>
+                                                            <div class="row g-2 align-items-start">
+                                                                <div class="col-12 col-md-7">
+                                                                    <canvas x-ref="pivot" width="420" height="180"
+                                                                        class="w-100 rounded"
+                                                                        style="max-width:420px;touch-action:none;cursor:crosshair;border:1px solid var(--rg-border)"
+                                                                        @pointerdown="pivotDown($event)"
+                                                                        @pointermove="pivotMove($event)"></canvas>
+                                                                </div>
+                                                                <div class="col-12 col-md-5">
+                                                                    <div class="row g-2">
+                                                                        <div class="col-6">
+                                                                            <label class="form-label small" x-text="t('ed_pivot_x')"></label>
+                                                                            <input type="number" min="0" max="2000" step="1"
+                                                                                class="form-control form-control-sm"
+                                                                                :placeholder="t('ed_pivot_auto')"
+                                                                                :value="screen.needle_px < 0 ? '' : screen.needle_px"
+                                                                                @input="pivotInput('needle_px', $event)">
+                                                                        </div>
+                                                                        <div class="col-6">
+                                                                            <label class="form-label small" x-text="t('ed_pivot_y')"></label>
+                                                                            <input type="number" min="0" max="2000" step="1"
+                                                                                class="form-control form-control-sm"
+                                                                                :placeholder="t('ed_pivot_auto')"
+                                                                                :value="screen.needle_py < 0 ? '' : screen.needle_py"
+                                                                                @input="pivotInput('needle_py', $event)">
+                                                                        </div>
+                                                                    </div>
+                                                                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                                                        :disabled="screen.needle_px < 0 && screen.needle_py < 0"
+                                                                        @click="pivotAuto()">
+                                                                        <i class="fas fa-rotate-left me-1"></i><span x-text="t('ed_pivot_auto_btn')"></span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div class="form-text" x-text="t('ed_pivot_hint')"></div>
+                                                        </div>
                                                     </div>
                                                 </template>
                                                 <template x-if="screen.type === 'ring'">
@@ -335,7 +434,7 @@
                                     </template>
 
                                     <!-- Диапазон экрана, зоны и метки -->
-                                    <template x-if="screen.type !== 'number'">
+                                    <template x-if="screen.type === 'dial' || screen.type === 'ring'">
                                         <div class="sec-box">
                                             <button type="button" class="btn btn-link sec-head p-0 d-flex align-items-center gap-2 w-100 text-start"
                                                 @click="toggleSec('ranges')">

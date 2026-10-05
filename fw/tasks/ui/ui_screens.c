@@ -55,6 +55,17 @@ typedef struct {
     lv_point_precise_t marker_pts[RG_LAYOUT_MAX_MARKERS][2]; // линии держат указатель на точки
     ui_widget_t w[RG_LAYOUT_MAX_WIDGETS];
     int w_count;
+    // Д-метр (gmeter): точка, шлейф и метки максимумов.
+    sig_t sig2;
+    lv_obj_t *gm_dot, *gm_trail[RG_LAYOUT_MAX_TRAIL], *gm_peak[4], *gm_peak_lbl[4];
+    int gm_hx[RG_LAYOUT_MAX_TRAIL + 1], gm_hy[RG_LAYOUT_MAX_TRAIL + 1]; // история точки: [0] - текущая
+    int gm_hn;
+    int gm_dx, gm_dy;
+    bool gm_visible;
+    int64_t gm_trail_ms, gm_last_ms;
+    float gm_peak_v[4];          // вверх, вниз, влево, вправо - в g
+    int64_t gm_peak_ms[4];
+    int gm_peak_txt[4];
 } ui_screen_t;
 
 typedef struct {
@@ -252,17 +263,19 @@ static void build_dial(ui_screen_t *u)
         lv_line_set_points(m, u->marker_pts[i], 2);
     }
 
-    // Стрелка: картинка из media (смотрит вправо, ось вращения слева по центру)
-    // либо, если картинки нет, линия.
+    // Стрелка: картинка из media (смотрит вправо; ось вращения задана needle_px/needle_py,
+    // по умолчанию слева по центру) либо, если картинки нет, линия.
     if (c->needle_image[0] && media_file_exists(c->needle_image)) {
         char src[48];
         media_src(c->needle_image, src, sizeof(src));
         lv_obj_t *img = lv_image_create(scale);
         lv_image_set_src(img, src);
         lv_obj_update_layout(img);
-        int h = lv_obj_get_height(img);
-        lv_image_set_pivot(img, 0, h / 2);
-        lv_obj_set_pos(img, size / 2, size / 2 - h / 2);
+        int w = lv_obj_get_width(img), h = lv_obj_get_height(img);
+        int px = c->needle_px >= 0 ? LV_MIN(c->needle_px, w) : 0;
+        int py = c->needle_py >= 0 ? LV_MIN(c->needle_py, h) : h / 2;
+        lv_image_set_pivot(img, px, py);
+        lv_obj_set_pos(img, size / 2 - px, size / 2 - py);
         u->needle = img;
         u->needle_is_image = true;
     } else {
@@ -302,6 +315,200 @@ static void build_ring(ui_screen_t *u)
     u->arc = make_arc(u->scr, RG_UI_DIAL_SIZE, c->ring_width, c->angle, c->rotation, 0x303030, c->color);
     lv_obj_center(u->arc);
     u->cur_zone = -1;
+}
+
+// ------------------------------------------------------------------
+// Д-метр: перегрузки точкой на круговой сетке
+// ------------------------------------------------------------------
+#define GM_RADIUS 180          // радиус внешнего кольца, px
+#define GM_DOT_D 28
+#define GM_PEAK_D 10
+#define GM_TRAIL_STEP_MS 50    // шаг записи шлейфа
+#define GM_PEAK_HOLD_MS 8000   // сколько максимум держится, потом спадает
+#define GM_PEAK_DECAY_G_S 0.25f
+#define GM_DOT_CLAMP 1.05f     // точка не уходит дальше внешнего кольца больше чем на 5 %
+
+static lv_obj_t *gm_circle(lv_obj_t *parent, int d, lv_color_t fill, lv_opa_t fill_opa, lv_color_t border, int border_w)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, d, d);
+    lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(o, fill, 0);
+    lv_obj_set_style_bg_opa(o, fill_opa, 0);
+    lv_obj_set_style_border_color(o, border, 0);
+    lv_obj_set_style_border_width(o, border_w, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    not_clickable(o);
+    return o;
+}
+
+static lv_obj_t *gm_bar(lv_obj_t *parent, int w, int h, lv_color_t color)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_style_radius(o, 0, 0);
+    lv_obj_set_style_bg_color(o, color, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    not_clickable(o);
+    lv_obj_align(o, LV_ALIGN_CENTER, 0, 0);
+    return o;
+}
+
+static void build_gmeter(ui_screen_t *u)
+{
+    const roundGauge_screen_t *c = u->cfg;
+    const float scale = GM_RADIUS / c->g_range;
+    lv_color_t grid = lv_color_hex(c->text_color);
+
+    // Кольца через g_step; внешнее толще.
+    for (int k = 1; k * c->g_step <= c->g_range + 0.001f; k++) {
+        int d = (int)lroundf(2 * k * c->g_step * scale);
+        bool outer = k * c->g_step >= c->g_range - 0.001f;
+        lv_obj_t *ring = gm_circle(u->scr, d, grid, LV_OPA_TRANSP, grid, outer ? 3 : 2);
+        lv_obj_align(ring, LV_ALIGN_CENTER, 0, 0);
+    }
+    gm_bar(u->scr, 2, 2 * GM_RADIUS, grid);
+    gm_bar(u->scr, 2 * GM_RADIUS, 2, grid);
+
+    // Метки максимумов: маркер на оси и число за внешним кольцом.
+    if (c->peaks) {
+        const int lx[4] = { 0, 0, -(GM_RADIUS + 36), GM_RADIUS + 36 };
+        const int ly[4] = { -(GM_RADIUS + 24), GM_RADIUS + 24, 0, 0 };
+        for (int i = 0; i < 4; i++) {
+            u->gm_peak[i] = gm_circle(u->scr, GM_PEAK_D, lv_color_hex(0xFF4040), LV_OPA_COVER, lv_color_hex(0xFF4040), 0);
+            lv_obj_set_hidden(u->gm_peak[i], true);
+            u->gm_peak_lbl[i] = lv_label_create(u->scr);
+            lv_obj_set_style_text_font(u->gm_peak_lbl[i], &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(u->gm_peak_lbl[i], lv_color_hex(0xFF8080), 0);
+            lv_obj_align(u->gm_peak_lbl[i], LV_ALIGN_CENTER, lx[i], ly[i]);
+            lv_obj_set_hidden(u->gm_peak_lbl[i], true);
+            u->gm_peak_txt[i] = -1;
+        }
+    }
+
+    // Шлейф: от самой старой (маленькой и прозрачной) к новой; новые рисуются выше.
+    for (int k = c->trail - 1; k >= 0; k--) {
+        int d = 8 + (GM_DOT_D - 12) * (c->trail - k) / (c->trail + 1);
+        lv_opa_t opa = (lv_opa_t)(180 - 150 * k / (c->trail > 1 ? c->trail - 1 : 1));
+        u->gm_trail[k] = gm_circle(u->scr, d, lv_color_hex(c->color), opa, lv_color_hex(c->color), 0);
+        lv_obj_set_hidden(u->gm_trail[k], true);
+    }
+
+    u->gm_dot = gm_circle(u->scr, GM_DOT_D, lv_color_hex(c->color), LV_OPA_COVER, lv_color_white(), 2);
+    lv_obj_align(u->gm_dot, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_hidden(u->gm_dot, true);
+}
+
+// Скрыть точку, шлейф и максимумы (нет данных датчика).
+static void gmeter_hide(ui_screen_t *u)
+{
+    lv_obj_set_hidden(u->gm_dot, true);
+    for (int k = 0; k < u->cfg->trail; k++) lv_obj_set_hidden(u->gm_trail[k], true);
+    for (int i = 0; i < 4; i++) {
+        if (u->gm_peak[i]) {
+            lv_obj_set_hidden(u->gm_peak[i], true);
+            lv_obj_set_hidden(u->gm_peak_lbl[i], true);
+        }
+    }
+    u->gm_visible = false;
+    u->gm_hn = 0;
+}
+
+static void update_gmeter(ui_screen_t *u)
+{
+    const roundGauge_screen_t *c = u->cfg;
+    float lon, lat;
+    if (!(roundGauge_signal_get(u->sig.id, &lon) && roundGauge_signal_get(u->sig2.id, &lat))) {
+        if (u->gm_visible || !u->shown) {
+            gmeter_hide(u);
+        }
+        return;
+    }
+    int64_t now = esp_timer_get_time() / 1000;
+    const float scale = GM_RADIUS / c->g_range;
+
+    // Экранные оси: вправо +, вверх +. Точка показывает силу, которую чувствует водитель
+    // (при торможении вверх, при правом повороте влево), если не отключено "felt".
+    float sx = c->felt ? -lat : lat;
+    float sy = c->felt ? -lon : lon;
+    float m = hypotf(sx, sy), lim = c->g_range * GM_DOT_CLAMP;
+    if (m > lim) {
+        sx *= lim / m;
+        sy *= lim / m;
+    }
+    int px = (int)lroundf(sx * scale), py = -(int)lroundf(sy * scale);
+
+    if (!u->gm_visible || px != u->gm_dx || py != u->gm_dy) {
+        lv_obj_align(u->gm_dot, LV_ALIGN_CENTER, px, py);
+        u->gm_dx = px;
+        u->gm_dy = py;
+    }
+    if (!u->gm_visible) {
+        lv_obj_set_hidden(u->gm_dot, false);
+        u->gm_visible = true;
+        u->gm_trail_ms = now;
+        u->gm_last_ms = now;
+        u->gm_hn = 0;
+        for (int i = 0; i < 4; i++) {
+            u->gm_peak_v[i] = 0;
+            u->gm_peak_ms[i] = now;
+        }
+    }
+
+    // Шлейф: каждые GM_TRAIL_STEP_MS записываем положение и сдвигаем точки по истории.
+    if (c->trail > 0 && now - u->gm_trail_ms >= GM_TRAIL_STEP_MS) {
+        u->gm_trail_ms = now;
+        int n = c->trail;
+        for (int i = n; i > 0; i--) {
+            u->gm_hx[i] = u->gm_hx[i - 1];
+            u->gm_hy[i] = u->gm_hy[i - 1];
+        }
+        u->gm_hx[0] = px;
+        u->gm_hy[0] = py;
+        if (u->gm_hn < n + 1) u->gm_hn++;
+        for (int k = 0; k < n; k++) {
+            if (k + 1 < u->gm_hn) {
+                lv_obj_align(u->gm_trail[k], LV_ALIGN_CENTER, u->gm_hx[k + 1], u->gm_hy[k + 1]);
+                lv_obj_set_hidden(u->gm_trail[k], false);
+            }
+        }
+    }
+
+    // Максимумы по направлениям экрана: вверх, вниз, влево, вправо. Держатся, потом спадают.
+    if (c->peaks) {
+        float dt = (float)(now - u->gm_last_ms) / 1000.0f;
+        if (dt > 0.2f) dt = 0.2f;
+        const float cur[4] = { fmaxf(sy, 0), fmaxf(-sy, 0), fmaxf(-sx, 0), fmaxf(sx, 0) };
+        for (int i = 0; i < 4; i++) {
+            if (cur[i] >= u->gm_peak_v[i]) {
+                u->gm_peak_v[i] = cur[i];
+                u->gm_peak_ms[i] = now;
+            } else if (now - u->gm_peak_ms[i] > GM_PEAK_HOLD_MS) {
+                u->gm_peak_v[i] = fmaxf(cur[i], u->gm_peak_v[i] - GM_PEAK_DECAY_G_S * dt);
+            }
+            float v = u->gm_peak_v[i];
+            bool show = v > 0.05f;
+            lv_obj_set_hidden(u->gm_peak[i], !show);
+            lv_obj_set_hidden(u->gm_peak_lbl[i], !show);
+            if (!show) {
+                u->gm_peak_txt[i] = -1;
+                continue;
+            }
+            int dist = (int)lroundf(v * scale);
+            const int ax[4] = { 0, 0, -1, 1 }, ay[4] = { -1, 1, 0, 0 };
+            lv_obj_align(u->gm_peak[i], LV_ALIGN_CENTER, ax[i] * dist, ay[i] * dist);
+            int txt = (int)lroundf(v * 100);
+            if (txt != u->gm_peak_txt[i]) {
+                char s[12];
+                snprintf(s, sizeof(s), "%.2f", (double)v); // встроенный sprintf LVGL не умеет %f
+                lv_label_set_text(u->gm_peak_lbl[i], s);
+                u->gm_peak_txt[i] = txt;
+            }
+        }
+    }
+    u->gm_last_ms = now;
 }
 
 // ------------------------------------------------------------------
@@ -428,6 +635,10 @@ static void build_screen(ui_set_t *set, ui_screen_t *u, const roundGauge_screen_
         break;
     case RG_SCREEN_NUMBER:
         break;
+    case RG_SCREEN_GMETER:
+        resolve_signal(&set->layout, c->signal2, &u->sig2);
+        build_gmeter(u);
+        break;
     }
 
     for (int i = 0; i < c->widget_count; i++) {
@@ -506,6 +717,7 @@ void ui_screens_switch(int dir)
     s_set->cur = (s_set->cur + dir + s_set->count) % s_set->count;
     ui_screen_t *u = &s_set->s[s_set->cur];
     u->shown = false; // значения могли уйти вперёд, пока экран не был виден
+    u->gm_visible = false;
     for (int i = 0; i < u->w_count; i++) {
         u->w[i].shown = false;
     }
@@ -616,6 +828,15 @@ static void update_widget(ui_widget_t *w, bool force)
 
 static void update_screen(ui_screen_t *u)
 {
+    if (u->cfg->type == RG_SCREEN_GMETER) {
+        update_gmeter(u);
+        bool first = !u->shown;
+        u->shown = true;
+        for (int i = 0; i < u->w_count; i++) {
+            update_widget(&u->w[i], first);
+        }
+        return;
+    }
     float v = 0;
     bool ok = roundGauge_signal_get(u->sig.id, &v);
     int32_t pos_key = ok ? to_res(u->sig.min, u->sig.max, v) : -1;

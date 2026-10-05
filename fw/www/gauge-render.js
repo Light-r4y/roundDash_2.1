@@ -100,7 +100,8 @@ const RgGauge = (() => {
             ctx.save();
             ctx.translate(C, C);
             ctx.rotate(ang);
-            ctx.drawImage(img, 0, -img.height / 2);
+            // Ось вращения: точка картинки (needle_px, needle_py), -1 - авто (слева по центру).
+            ctx.drawImage(img, -(sc.needle_px >= 0 ? sc.needle_px : 0), -(sc.needle_py >= 0 ? sc.needle_py : img.height / 2));
             ctx.restore();
         } else {
             line(ctx, [C, C], polar(R - NEEDLE_MARGIN, ang), sc.needle_width, sc.needle_color, 'round');
@@ -127,6 +128,102 @@ const RgGauge = (() => {
         const zone = v == null ? null : zoneAt(sig.zones, v);
         arcShape(ctx, C, C, SIZE - 40, sc.ring_width, sc.angle, sc.rotation, '#303030',
             zone ? zone.color : sc.color, v == null ? 0 : frac(sig.min, sig.max, v));
+    }
+
+    // ---- д-метр: точка на круговой сетке (ui_screens.c, build_gmeter / update_gmeter) ----
+    const GM_RADIUS = 180, GM_DOT_D = 28, GM_CLAMP = 1.05;
+
+    // Положение точки по значениям двух сигналов: sx/sy в g (вправо и вверх на экране), px/py -
+    // пиксели от центра. null - нет данных. Точка показывает силу, которую чувствует водитель
+    // (felt): при торможении вверх, при правом повороте влево.
+    function gmeterPoint(sc, values) {
+        const lon = values[sc.signal], lat = values[sc.signal2];
+        if (lon == null || lat == null) return null;
+        const scale = GM_RADIUS / sc.g_range;
+        let sx = sc.felt ? -lat : lat, sy = sc.felt ? -lon : lon;
+        const m = Math.hypot(sx, sy), lim = sc.g_range * GM_CLAMP;
+        if (m > lim) { sx *= lim / m; sy *= lim / m; }
+        return { sx, sy, px: Math.round(sx * scale), py: -Math.round(sy * scale) };
+    }
+
+    // Шлейф и максимумы д-метра, как в ui_screens.c: точка записывается каждые 50 мс, максимум
+    // держится 8 с и потом спадает на 0,25 g/с. st - { sc, hist, peaks, peakMs, trailMs, lastMs }
+    // (пустой объект подходит), его ведёт вызывающий и отдаёт в draw() как extra.
+    function gmeterTrack(st, sc, values, now) {
+        if (st.sc !== sc) {
+            Object.assign(st, { sc, hist: [], peaks: [0, 0, 0, 0], peakMs: [now, now, now, now], trailMs: now, lastMs: now });
+        }
+        const pt = gmeterPoint(sc, values);
+        if (!pt) { st.hist = []; return; }
+        if (now - st.trailMs >= 50 || !st.hist.length) {
+            st.trailMs = now;
+            st.hist.unshift({ px: pt.px, py: pt.py });
+            st.hist.length = Math.min(st.hist.length, sc.trail + 1);
+        }
+        const dt = Math.min(0.2, (now - st.lastMs) / 1000);
+        st.lastMs = now;
+        const cur = [Math.max(pt.sy, 0), Math.max(-pt.sy, 0), Math.max(-pt.sx, 0), Math.max(pt.sx, 0)];
+        for (let i = 0; i < 4; i++) {
+            if (cur[i] >= st.peaks[i]) { st.peaks[i] = cur[i]; st.peakMs[i] = now; }
+            else if (now - st.peakMs[i] > 8000) st.peaks[i] = Math.max(cur[i], st.peaks[i] - 0.25 * dt);
+        }
+    }
+
+    // extra: { hist: [{px, py}, ...] - шлейф от новой к старой, peaks: [вверх, вниз, влево, вправо] в g }.
+    function drawGmeter(ctx, sc, values, extra) {
+        const scale = GM_RADIUS / sc.g_range;
+        for (let k = 1; k * sc.g_step <= sc.g_range + 0.001; k++) {
+            ctx.beginPath();
+            ctx.arc(C, C, k * sc.g_step * scale, 0, Math.PI * 2);
+            ctx.lineWidth = k * sc.g_step >= sc.g_range - 0.001 ? 3 : 2;
+            ctx.strokeStyle = sc.text_color;
+            ctx.stroke();
+        }
+        ctx.fillStyle = sc.text_color;
+        ctx.fillRect(C - 1, C - GM_RADIUS, 2, GM_RADIUS * 2);
+        ctx.fillRect(C - GM_RADIUS, C - 1, GM_RADIUS * 2, 2);
+
+        const pt = gmeterPoint(sc, values);
+        if (!pt) return;
+
+        if (sc.peaks && extra && extra.peaks) {
+            const ax = [0, 0, -1, 1], ay = [-1, 1, 0, 0];
+            const lx = [0, 0, -(GM_RADIUS + 36), GM_RADIUS + 36], ly = [-(GM_RADIUS + 24), GM_RADIUS + 24, 0, 0];
+            for (let i = 0; i < 4; i++) {
+                const v = extra.peaks[i];
+                if (!(v > 0.05)) continue;
+                const d = Math.round(v * scale);
+                ctx.beginPath();
+                ctx.arc(C + ax[i] * d, C + ay[i] * d, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff4040';
+                ctx.fill();
+                ctx.font = '14px ' + FONT;
+                ctx.fillStyle = '#ff8080';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(v.toFixed(2), C + lx[i], C + ly[i]);
+            }
+        }
+
+        // Шлейф: самые старые точки мельче и прозрачнее.
+        const n = Math.min(sc.trail, extra && extra.hist ? extra.hist.length - 1 : 0);
+        for (let k = n - 1; k >= 0; k--) {
+            const h = extra.hist[k + 1];
+            ctx.beginPath();
+            ctx.arc(C + h.px, C + h.py, (8 + (GM_DOT_D - 12) * (sc.trail - k) / (sc.trail + 1)) / 2, 0, Math.PI * 2);
+            ctx.globalAlpha = (180 - 150 * k / (sc.trail > 1 ? sc.trail - 1 : 1)) / 255;
+            ctx.fillStyle = sc.color;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        ctx.beginPath();
+        ctx.arc(C + pt.px, C + pt.py, GM_DOT_D / 2, 0, Math.PI * 2);
+        ctx.fillStyle = sc.color;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
     }
 
     // ---- дополнительные виджеты ----
@@ -226,8 +323,9 @@ const RgGauge = (() => {
 
     // ---- экран целиком ----
     // values - имя сигнала -> число (нет ключа - нет данных); imgs - имя -> canvas;
-    // sel - номер выделенного виджета (рамка) или -1; editor - рисовать подсказки.
-    function draw(canvas, layout, sc, values, imgs, sel, editor) {
+    // sel - номер выделенного виджета (рамка) или -1; editor - рисовать подсказки;
+    // extra - шлейф и максимумы д-метра (их ведёт вызывающий).
+    function draw(canvas, layout, sc, values, imgs, sel, editor, extra) {
         const ctx = canvas.getContext('2d');
         ctx.save();
         ctx.clearRect(0, 0, SIZE, SIZE);
@@ -243,6 +341,7 @@ const RgGauge = (() => {
         const v = values[sc.signal] ?? null;
         if (sc.type === 'dial') drawDial(ctx, sc, sig, v, imgs);
         else if (sc.type === 'ring') drawRing(ctx, sc, sig, v);
+        else if (sc.type === 'gmeter') drawGmeter(ctx, sc, values, extra);
 
         sc.widgets.forEach((w) => drawWidget(ctx, layout, sc, w, values, imgs, editor));
 
@@ -272,5 +371,5 @@ const RgGauge = (() => {
         return -1;
     }
 
-    return { draw, hitTest, sigDef, mainSig, SIZE };
+    return { draw, hitTest, sigDef, mainSig, gmeterPoint, gmeterTrack, SIZE };
 })();

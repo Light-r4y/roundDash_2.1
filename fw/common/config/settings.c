@@ -20,6 +20,7 @@ void roundGauge_settings_defaults(roundGauge_settings_t *out)
     memset(out, 0, sizeof(*out));
     out->version = RG_SETTINGS_VERSION;
     out->display.brightness = RG_LCD_BL_DEFAULT_PCT;
+    out->imu.g0[2] = 1.0f; // не откалибровано: плата лежит ровно
     out->can.bitrate = RG_CAN_BITRATE_DEFAULT;
     out->can.mode = RG_CAN_LISTEN_ONLY_DEFAULT ? RG_CAN_MODE_LISTEN_ONLY : RG_CAN_MODE_NORMAL;
     out->wifi_ap.ssid[0] = '\0'; // пусто - roundGauge-XXXX по MAC
@@ -83,6 +84,24 @@ static bool parse(const char *json, roundGauge_settings_t *out)
     get_u32(disp, "brightness", &br);
     out->display.brightness = (uint8_t)(br < RG_LCD_BL_MIN_PCT ? RG_LCD_BL_MIN_PCT : (br > 100 ? 100 : br));
 
+    const cJSON *imu = cJSON_GetObjectItemCaseSensitive(root, "imu");
+    const cJSON *cal = cJSON_GetObjectItemCaseSensitive(imu, "calibrated");
+    if (cJSON_IsBool(cal)) {
+        out->imu.calibrated = cJSON_IsTrue(cal);
+    }
+    const cJSON *g0 = cJSON_GetObjectItemCaseSensitive(imu, "g0");
+    if (cJSON_IsArray(g0) && cJSON_GetArraySize(g0) == 3) {
+        for (int i = 0; i < 3; i++) {
+            const cJSON *v = cJSON_GetArrayItem(g0, i);
+            if (cJSON_IsNumber(v)) {
+                out->imu.g0[i] = (float)v->valuedouble;
+            }
+        }
+    }
+    uint32_t fwd = out->imu.fwd;
+    get_u32(imu, "fwd", &fwd);
+    out->imu.fwd = (uint8_t)(fwd > 3 ? 0 : fwd);
+
     const cJSON *ap = cJSON_GetObjectItemCaseSensitive(root, "wifi_ap");
     get_str(ap, "ssid", out->wifi_ap.ssid, sizeof(out->wifi_ap.ssid));
     get_str(ap, "password", out->wifi_ap.password, sizeof(out->wifi_ap.password));
@@ -106,6 +125,11 @@ static char *serialize(const roundGauge_settings_t *cfg)
 
     cJSON *disp = cJSON_AddObjectToObject(root, "display");
     cJSON_AddNumberToObject(disp, "brightness", cfg->display.brightness);
+
+    cJSON *imu = cJSON_AddObjectToObject(root, "imu");
+    cJSON_AddBoolToObject(imu, "calibrated", cfg->imu.calibrated);
+    cJSON_AddItemToObject(imu, "g0", cJSON_CreateFloatArray(cfg->imu.g0, 3));
+    cJSON_AddNumberToObject(imu, "fwd", cfg->imu.fwd);
 
     cJSON *ap = cJSON_AddObjectToObject(root, "wifi_ap");
     cJSON_AddStringToObject(ap, "ssid", cfg->wifi_ap.ssid);
@@ -160,6 +184,53 @@ void roundGauge_settings_get_can(roundGauge_can_settings_t *out)
     portENTER_CRITICAL(&s_can_lock);
     *out = s_cfg.can;
     portEXIT_CRITICAL(&s_can_lock);
+}
+
+void roundGauge_settings_get_wifi(roundGauge_wifi_ap_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.wifi_ap;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+esp_err_t roundGauge_settings_set_wifi(const roundGauge_wifi_ap_settings_t *w)
+{
+    roundGauge_settings_t next = s_cfg;
+    next.wifi_ap = *w;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.wifi_ap = *w;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
+}
+
+esp_err_t roundGauge_settings_reset_wifi(void)
+{
+    roundGauge_wifi_ap_settings_t w = {0};
+    strlcpy(w.password, RG_WIFI_AP_PASS_DEFAULT, sizeof(w.password));
+    return roundGauge_settings_set_wifi(&w);
+}
+
+void roundGauge_settings_get_imu(roundGauge_imu_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.imu;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+esp_err_t roundGauge_settings_set_imu(const roundGauge_imu_settings_t *imu)
+{
+    roundGauge_settings_t next = s_cfg;
+    next.imu = *imu;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.imu = *imu;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
 }
 
 void roundGauge_settings_get_display(roundGauge_display_settings_t *out)

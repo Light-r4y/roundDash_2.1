@@ -31,10 +31,12 @@ The access point stays on until the board is restarted; a Wi-Fi icon with the
 number of connected devices remains at the bottom of the screen.
 
 Pages
-  /             status, brightness, settings password
+  /             status, brightness
+  /access.html  settings password and Wi-Fi network name/password
   /editor.html  screens: widgets, signals, colors (drag widgets on the preview)
   /media.html   images and fonts on the board
   /can.html     CAN speed and mode, signal mapping table, frame sniffer
+  /imu.html     accelerometer: live g-force dot, calibration, forward direction
   /ota          firmware and web interface update
                 (roundGauge_firmware_*.bin and roundGauge_www_*.bin)
 
@@ -45,6 +47,7 @@ Controls
 --------
   Button 1, short press   next screen
   Button 1, hold 2 s      Wi-Fi access point
-  Button 1, hold 10 s     clear a forgotten settings password
+  Button 1, hold 10 s     reset access: settings password and Wi-Fi back to defaults,
+                          the board restarts (a warning shows 3 s before)
   Button 2                next screen (does not work while powered over Type-C)
   Swipe left / right      next / previous screen (touch builds)

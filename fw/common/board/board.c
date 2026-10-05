@@ -256,6 +256,11 @@ esp_lcd_touch_handle_t roundGauge_board_touch(void)
     return s_touch;
 }
 
+i2c_master_bus_handle_t roundGauge_board_i2c(void)
+{
+    return s_i2c_bus;
+}
+
 esp_err_t roundGauge_board_backlight_set(uint8_t pct)
 {
     if (pct > 100) {

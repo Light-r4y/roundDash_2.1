@@ -1,0 +1,6 @@
+# clangd для проекта ESP-IDF (компилятор Xtensa GCC, clangd его флаги не знает).
+CompileFlags:
+  CompilationDatabase: build
+  Remove: [-f*, -m*]
+Diagnostics:
+  Suppress: [pp_file_not_found]

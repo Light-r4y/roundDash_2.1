@@ -299,3 +299,14 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--rg-border);
 }
+
+/* Ползунки (яркость и т.п.): цвета темы вместо синего Bootstrap */
+.form-range { accent-color: var(--rg-accent); }
+.form-range::-webkit-slider-runnable-track { background: var(--rg-border); }
+.form-range::-moz-range-track { background: var(--rg-border); }
+.form-range::-webkit-slider-thumb { background: var(--rg-accent); }
+.form-range::-moz-range-thumb { background: var(--rg-accent); }
+.form-range:focus::-webkit-slider-thumb { box-shadow: 0 0 0 0.2rem var(--rg-accent-soft); }
+.form-range:focus::-moz-range-thumb { box-shadow: 0 0 0 0.2rem var(--rg-accent-soft); }
+.form-range:disabled::-webkit-slider-thumb { background: var(--rg-text-muted); }
+.form-range:disabled::-moz-range-thumb { background: var(--rg-text-muted); }

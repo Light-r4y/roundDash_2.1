@@ -8,6 +8,8 @@
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_heap_caps.h"
+#include "cJSON.h"
 #include "board.h"
 #include "settings.h"
 #include "auth.h"
@@ -17,6 +19,7 @@
 #include "can_task.h"
 #include "buttons_task.h"
 #include "touch_task.h"
+#include "imu_task.h"
 #include "webcfg_task.h"
 
 // RG_LOG_LEVEL_STR задаётся в CMakeLists.txt: "INFO" при обычном "idf.py build",
@@ -40,8 +43,19 @@ static void nvs_init(void)
     ESP_ERROR_CHECK(ret);
 }
 
+// Дерево cJSON при разборе раскладки (до ~16 КБ JSON) - десятки килобайт мелких блоков:
+// во внутренней RAM они бы пришлись на момент, когда уже работают Wi-Fi и LVGL. Кладём в PSRAM;
+// free() освобождает блок из любой кучи, поэтому подмены освобождения не нужно.
+static void *cjson_malloc(size_t size)
+{
+    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p != NULL ? p : malloc(size);
+}
+
 void app_main(void)
 {
+    cJSON_Hooks hooks = { .malloc_fn = cjson_malloc, .free_fn = free };
+    cJSON_InitHooks(&hooks);
     apply_log_level();
     nvs_init();
 
@@ -54,6 +68,7 @@ void app_main(void)
     ESP_ERROR_CHECK(roundGauge_board_init());
 
     roundGauge_ui_task_start();      // Отрисовка, ядро 1 (вместе с задачей esp_lvgl_port)
+    roundGauge_imu_task_start();     // Акселерометр, ядро 0
     roundGauge_touch_task_start();   // Свайпы по экрану, ядро 0
     roundGauge_can_task_start();     // Приём и разбор CAN, ядро 0
     roundGauge_webcfg_task_start();  // Точка доступа по запросу, ядро 0

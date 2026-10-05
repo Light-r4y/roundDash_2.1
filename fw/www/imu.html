@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Sensor</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/gauge-render.js"></script>
+    <script src="/imu.js"></script>
+    <style>
+        .g-val { font-variant-numeric: tabular-nums; font-size: 1.3rem; font-weight: 600; }
+        .g-lbl { color: var(--rg-text-muted); font-size: .8rem; }
+    </style>
+</head>
+
+<body>
+    <div x-data="imuPage()" x-effect="document.title = t('title_imu')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-3 mb-5" style="max-width:960px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <div class="row g-3">
+                <!-- Живые показания -->
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2 text-start">
+                                <h6 class="mb-0 me-auto"><i class="fas fa-compass me-2"></i><span
+                                        x-text="t('imu_live')"></span></h6>
+                                <span class="badge" :class="sensorOk ? 'bg-success' : 'bg-danger'"
+                                    x-text="offline ? t('imu_offline') : (sensorOk ? t('imu_ok') : t('imu_missing'))"></span>
+                            </div>
+                            <canvas x-ref="canvas" width="480" height="480"
+                                style="width:100%;max-width:340px;border-radius:50%;background:#000"></canvas>
+                            <div class="row mt-3" x-show="sensorOk">
+                                <div class="col-3"><div class="g-val" x-text="fmt(s?.lon)"></div><div class="g-lbl"
+                                        x-text="t('imu_lon')"></div></div>
+                                <div class="col-3"><div class="g-val" x-text="fmt(s?.lat)"></div><div class="g-lbl"
+                                        x-text="t('imu_lat')"></div></div>
+                                <div class="col-3"><div class="g-val" x-text="fmt(s?.vert)"></div><div class="g-lbl"
+                                        x-text="t('imu_vert')"></div></div>
+                                <div class="col-3"><div class="g-val" x-text="s ? Number(s.tot).toFixed(2) : ''"></div><div
+                                        class="g-lbl" x-text="t('imu_tot')"></div></div>
+                            </div>
+                            <div class="small text-muted mt-2" x-text="t('imu_dot_hint')"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <!-- Калибровка -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6 class="mb-2"><i class="fas fa-crosshairs me-2"></i><span x-text="t('imu_cal')"></span>
+                            </h6>
+                            <p class="small text-muted mb-2" x-text="t('imu_cal_hint')"></p>
+                            <button type="button" class="btn btn-sm btn-accent"
+                                :disabled="busy || controlsLocked() || !sensorOk || (s && s.cal === 'running')"
+                                @click="calibrate()">
+                                <i class="fas fa-bullseye me-1"></i><span x-text="t('imu_cal_btn')"></span>
+                            </button>
+                            <span class="ms-2 small" :class="calClass()" x-text="calText()"></span>
+                        </div>
+                    </div>
+
+                    <!-- Направление "вперёд" -->
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="mb-2"><i class="fas fa-arrow-up me-2"></i><span x-text="t('imu_fwd')"></span>
+                            </h6>
+                            <p class="small text-muted mb-2" x-text="t('imu_fwd_hint')"></p>
+                            <button type="button" class="btn btn-sm btn-accent"
+                                :disabled="busy || controlsLocked() || !sensorOk || (s && s.detect === 'armed')"
+                                @click="detectForward()">
+                                <i class="fas fa-car-side me-1"></i><span x-text="t('imu_fwd_btn')"></span>
+                            </button>
+                            <span class="ms-2 small text-warning" x-text="detectText()"></span>
+
+                            <hr class="my-3">
+                            <div class="small mb-2" x-text="t('imu_fwd_manual')"></div>
+                            <div class="btn-group btn-group-sm">
+                                <template x-for="n in [0, 1, 2, 3]" :key="n">
+                                    <button type="button" class="btn"
+                                        :class="s && s.fwd === n ? 'btn-accent' : 'btn-outline-secondary'"
+                                        :disabled="busy || controlsLocked() || !sensorOk" @click="setForward(n)"
+                                        x-text="t('imu_variant') + ' ' + (n + 1)"></button>
+                                </template>
+                            </div>
+                            <div class="form-text" x-text="t('imu_fwd_manual_hint')"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -24,7 +24,8 @@ connector and swipes on the screen.
 | | What | Status |
 |---|---|---|
 | 🖥️ | ST7701S 480×480 screen, LVGL 9, two frame buffers, no tearing | ✅ works |
-| 🎨 | Up to 4 screens of three types — dial, ring fill, plain number — and up to 4 extra widgets on each (number, text, image, conditional indicator, bar, mini arc); backgrounds and needles from images | ✅ works (`bar`/`arc`/`indicator` and custom fonts — 🧪) |
+| 🎨 | Up to 8 screens of four types — dial, ring fill, plain number — and up to 4 extra widgets on each (number, text, image, conditional indicator, bar, mini arc); backgrounds and needles from images | ✅ works (`bar`/`arc`/`indicator` and custom fonts — 🧪) |
+| 📐 | G-meter: QMI8658 accelerometer, g-forces as a dot on a round grid with a trail and maxima (as in racing cars); gravity calibration at any board tilt, signals `g_lon`/`g_lat`/`g_vert`/`g_tot` are available to any widget | ✅ works on the board (axis and calibration accuracy — 🧪) |
 | 👆 | Swipe left/right to switch screens; a build option for a screen without touch (`RG_HAS_TOUCH=0`) | ✅ works |
 | 🔘 | Button 1: short press — next screen, hold — access point; button 2 — next screen | ✅ works |
 | 🚌 | CAN (TWAI) reception, DBC-style signal-to-frame mapping, data timeouts, web sniffer, "demo" mode with a generator | 🧪 written, not tested on a bus |
@@ -61,7 +62,7 @@ Everything connects to the J9 "12PIN Multi-function Interface" connector:
 ```
 ├── fw/                 firmware (ESP-IDF project)
 │   ├── main/           initialization and task startup
-│   ├── tasks/          one component per task: can, ui, buttons, touch, webcfg
+│   ├── tasks/          one component per task: can, ui, buttons, touch, imu, webcfg
 │   ├── common/         board (pins, screen, touch), config (settings, password,
 │   │                   screen layout, CAN table), signals (signal values)
 │   ├── www/            web interface → www partition
@@ -117,7 +118,8 @@ them alive without a bus:
 2. Connect to that network from a phone or laptop and open `http://192.168.4.1/`.
 3. **CAN** → turn on **"Demo"** → Apply. The values start moving.
 4. **Screens** — the look: drag widgets on the preview; "Apply to gauge" sends
-   the layout to the board immediately.
+   the layout to the board immediately. **Sensor** — calibrating the accelerometer
+   for the g-force screen.
 5. **Media** — your own backgrounds, needles and fonts.
 
 ### Controls
@@ -126,7 +128,7 @@ them alive without a bus:
 |---|---|
 | Button 1, short press | next screen |
 | Button 1, hold 2 s | Wi-Fi access point |
-| Button 1, hold 10 s | clear a forgotten settings password |
+| Button 1, hold 10 s | reset access: the settings password and Wi-Fi return to defaults, the board restarts (a warning is shown 3 s before) |
 | Button 2 | next screen |
 | Swipe left / right | next / previous screen |
 
