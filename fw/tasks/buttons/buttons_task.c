@@ -4,8 +4,6 @@
 #include "webcfg_task.h"
 #include "ui_task.h"
 #include "auth.h"
-#include "settings.h"
-#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -40,22 +38,19 @@ static void buttons_task(void *arg)
                     roundGauge_webcfg_start();
                 }
             }
-            // Дальше держим - сброс доступа (консоли для этого нет): пароль на настройки снимается,
-            // Wi-Fi возвращается к имени по MAC и паролю по умолчанию, плата перезагружается.
-            // Раскладка экранов, таблица CAN и остальные настройки остаются. Перед сбросом -
-            // предупреждение на экране, отпустить кнопку до конца значит отказаться.
+            // Дальше держим - снимаем забытый пароль на настройки (консоли для этого нет). Пароль
+            // Wi-Fi забыть нельзя: он показан на экране вместе с точкой доступа. Перед сбросом -
+            // предупреждение, отпустить кнопку до конца значит отказаться.
             if (btn1_held_ms >= RG_AUTH_RESET_WARN_MS && !warn_fired) {
                 warn_fired = true;
-                roundGauge_ui_toast("Hold to reset access");
+                roundGauge_ui_toast("Hold to reset password");
             }
             if (btn1_held_ms >= RG_AUTH_RESET_HOLD_MS && !reset_fired) {
                 reset_fired = true;
+                bool had = roundGauge_auth_is_enabled();
                 roundGauge_auth_set_password(NULL);
-                roundGauge_settings_reset_wifi();
-                ESP_LOGW(TAG, "Button 1 held %d ms - web password and Wi-Fi reset, restarting", RG_AUTH_RESET_HOLD_MS);
-                roundGauge_ui_toast("Access reset, reboot");
-                vTaskDelay(pdMS_TO_TICKS(2500));
-                esp_restart();
+                ESP_LOGW(TAG, "Button 1 held %d ms - web password cleared", RG_AUTH_RESET_HOLD_MS);
+                roundGauge_ui_toast(had ? "Password reset" : "No password set");
             }
         } else {
             if (btn1_held_ms >= RG_BTN_DEBOUNCE_TICKS * RG_BUTTONS_TICK_MS && btn1_held_ms < RG_BTN_AP_HOLD_MS) {

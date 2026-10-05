@@ -128,7 +128,7 @@ them alive without a bus:
 |---|---|
 | Button 1, short press | next screen |
 | Button 1, hold 2 s | Wi-Fi access point |
-| Button 1, hold 10 s | reset access: the settings password and Wi-Fi return to defaults, the board restarts (a warning is shown 3 s before) |
+| Button 1, hold 10 s | clear a forgotten settings password (a warning is shown 3 s before) |
 | Button 2 | next screen |
 | Swipe left / right | next / previous screen |
 

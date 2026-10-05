@@ -270,6 +270,12 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
     s->label_div = 1;
     s->needle_color = 0xFF8000;
     s->needle_width = 6;
+    s->tick_major_len = 22;
+    s->tick_minor_len = 10;
+    s->tick_major_width = 4;
+    s->tick_minor_width = 2;
+    s->label_gap = 15;
+    strlcpy(s->label_font, "28", sizeof(s->label_font));
     s->needle_px = -1;
     s->needle_py = -1;
     s->ring_width = 36;
@@ -331,6 +337,11 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
     v = s->ticks;        get_int(j, "ticks", 2, 101, &v);        s->ticks = (uint8_t)v;
     v = s->major_every;  get_int(j, "major_every", 1, 100, &v);  s->major_every = (uint8_t)v;
     v = s->needle_width; get_int(j, "needle_width", 1, 40, &v);  s->needle_width = (uint8_t)v;
+    v = s->tick_major_len;   get_int(j, "tick_major_len", 2, 80, &v);   s->tick_major_len = (uint8_t)v;
+    v = s->tick_minor_len;   get_int(j, "tick_minor_len", 2, 80, &v);   s->tick_minor_len = (uint8_t)v;
+    v = s->tick_major_width; get_int(j, "tick_major_width", 1, 12, &v);  s->tick_major_width = (uint8_t)v;
+    v = s->tick_minor_width; get_int(j, "tick_minor_width", 1, 12, &v);  s->tick_minor_width = (uint8_t)v;
+    v = s->label_gap;        get_int(j, "label_gap", 0, 80, &v);         s->label_gap = (uint8_t)v;
     v = s->needle_px;    get_int(j, "needle_px", -1, 2000, &v);  s->needle_px = (int16_t)v;
     v = s->needle_py;    get_int(j, "needle_py", -1, 2000, &v);  s->needle_py = (int16_t)v;
     v = s->ring_width;   get_int(j, "ring_width", 4, 120, &v);   s->ring_width = (uint8_t)v;
@@ -346,6 +357,7 @@ static bool parse_screen(const cJSON *j, roundGauge_screen_t *s)
     get_color(j, "needle_color", &s->needle_color);
     get_file_name(j, "bg_image", s->bg_image, sizeof(s->bg_image));
     get_file_name(j, "needle_image", s->needle_image, sizeof(s->needle_image));
+    get_file_name(j, "label_font", s->label_font, sizeof(s->label_font));
 
     parse_zones(cJSON_GetObjectItemCaseSensitive(j, "zones"), s->zones, &s->zone_count, s->min, s->max, s->color);
 

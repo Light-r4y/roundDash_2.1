@@ -310,3 +310,13 @@ body {
 .form-range:focus::-moz-range-thumb { box-shadow: 0 0 0 0.2rem var(--rg-accent-soft); }
 .form-range:disabled::-webkit-slider-thumb { background: var(--rg-text-muted); }
 .form-range:disabled::-moz-range-thumb { background: var(--rg-text-muted); }
+
+/* Колонки формы с подписью: подпись может занять две-три строки (узкий экран, длинное слово),
+   поэтому колонку тянем до высоты строки, а поле прижимаем вниз - поля в ряду остаются на одной линии. */
+.row > [class*="col"]:has(> label.form-label) { display: flex; flex-direction: column; justify-content: flex-end; }
+
+/* Касание: заголовки сворачиваемых секций и иконочные кнопки не меньше пальца. */
+@media (max-width: 767.98px) {
+    .sec-head { min-height: 36px; }
+    .btn-sm { min-height: 32px; }
+}

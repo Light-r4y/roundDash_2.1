@@ -145,6 +145,8 @@
                                                 x-text="canRate + ' ' + t('can_fps')"></span></span></div>
                                     <div class="kv" x-show="status.heap"><span class="k" x-text="t('st_heap')"></span><span
                                             x-text="heapText()"></span></div>
+                                    <div class="kv" x-show="status.heap"><span class="k" x-text="t('st_psram')"></span><span
+                                            x-text="status.heap ? fmtSize(status.heap.psram_free) : ''"></span></div>
                                     <div class="kv" x-show="media"><span class="k" x-text="t('st_media')"></span><span
                                             x-text="media ? fmtSize(media.used) + ' / ' + fmtSize(media.total) : ''"></span>
                                     </div>

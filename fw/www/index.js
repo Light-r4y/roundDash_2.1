@@ -97,12 +97,12 @@ function mainPage() {
             const label = this.t(key);
             return label === key ? name : label;
         },
-        // Внутренняя RAM (она тесная): свободно сейчас и минимум за всё время работы; PSRAM - свободно.
+        // Внутренняя RAM (она тесная): свободно сейчас и минимум за всё время работы.
         heapText() {
             const h = this.status && this.status.heap;
             if (!h) return '';
             const kb = (n) => Math.round(n / 1024) + ' KB';
-            return kb(h.int_free) + ' (' + this.t('st_heap_min') + ' ' + kb(h.int_min) + ') · PSRAM ' + this.fmtSize(h.psram_free);
+            return kb(h.int_free) + ' (' + this.t('st_heap_min') + ' ' + kb(h.int_min) + ')';
         },
         fmtSize(b) {
             return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b >= 1024 ? Math.round(b / 1024) + ' KB' : b + ' B';

@@ -206,13 +206,6 @@ esp_err_t roundGauge_settings_set_wifi(const roundGauge_wifi_ap_settings_t *w)
     return err;
 }
 
-esp_err_t roundGauge_settings_reset_wifi(void)
-{
-    roundGauge_wifi_ap_settings_t w = {0};
-    strlcpy(w.password, RG_WIFI_AP_PASS_DEFAULT, sizeof(w.password));
-    return roundGauge_settings_set_wifi(&w);
-}
-
 void roundGauge_settings_get_imu(roundGauge_imu_settings_t *out)
 {
     portENTER_CRITICAL(&s_can_lock);

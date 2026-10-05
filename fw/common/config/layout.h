@@ -20,7 +20,9 @@
 //       "bg_color": "#000000", "bg_image": "",
 //       "color": "#ffffff", "text_color": "#ffffff",
 //       "angle": 270, "rotation": 135, "ticks": 41, "major_every": 5, "label_div": 1000,
-//       "needle_color": "#ff8000", "needle_width": 6, "needle_image": "", "needle_px": -1, "needle_py": -1,
+//       "needle_color": "#ff8000", "needle_width": 6,
+//       "tick_major_len": 22, "tick_minor_len": 10, "tick_major_width": 4, "tick_minor_width": 2,
+//       "label_gap": 15, "label_font": "28", "needle_image": "", "needle_px": -1, "needle_py": -1,
 //       "markers": [ { "value": 7000, "color": "#ff0000" } ],
 //       "widgets": [
 //         { "type": "value", "x": 0, "y": 60, "font": "48" },
@@ -118,6 +120,11 @@ typedef struct {
     float label_div;
     uint32_t needle_color;
     uint8_t needle_width;
+    // Риски и подписи шкалы. Подпись стоит на радиусе: край - tick_major_len - label_gap.
+    uint8_t tick_major_len, tick_minor_len;     // длина, px
+    uint8_t tick_major_width, tick_minor_width; // толщина, px
+    uint8_t label_gap;                          // от конца крупной риски до центра подписи, px
+    char label_font[32];                        // "14" | "28" | "48" | файл .fnt из media
     char needle_image[32];
     // Ось вращения картинки-стрелки: точка картинки (px от левого верхнего угла), которая
     // ставится в центр шкалы. Меньше 0 - по оси "авто": x = 0, y = середина высоты.

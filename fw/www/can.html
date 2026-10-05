@@ -185,13 +185,6 @@
                                                 @input="mapChanged()"
                                                 :class="entryError(e, i) ? 'map-err' : ''">
                                         </div>
-                                        <div class="col-4 col-md-2 d-flex align-items-end">
-                                            <div class="form-check form-switch mb-2">
-                                                <input class="form-check-input" type="checkbox" :id="'ext' + i"
-                                                    x-model="e.ext" @change="mapChanged()">
-                                                <label class="form-check-label small" :for="'ext' + i">29 bit</label>
-                                            </div>
-                                        </div>
                                         <div class="col-4 col-md-2">
                                             <label class="form-label small" x-text="t('can_start')"></label>
                                             <input type="number" min="0" max="63" class="form-control form-control-sm"
@@ -202,7 +195,14 @@
                                             <input type="number" min="1" max="32" class="form-control form-control-sm"
                                                 :value="e.len" @input="entryNumber(e, 'len', $event)">
                                         </div>
-                                        <div class="col-4 col-md-3">
+                                        <div class="col-4 col-md-2 d-flex align-items-end">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" :id="'ext' + i"
+                                                    x-model="e.ext" @change="mapChanged()">
+                                                <label class="form-check-label small" :for="'ext' + i">29 bit</label>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-3">
                                             <label class="form-label small" x-text="t('can_order')"></label>
                                             <select class="form-select form-select-sm" x-model="e.order"
                                                 @change="mapChanged()">
@@ -211,7 +211,7 @@
                                                 </option>
                                             </select>
                                         </div>
-                                        <div class="col-4 col-md-2 d-flex align-items-end">
+                                        <div class="col-6 col-md-2 d-flex align-items-end">
                                             <div class="form-check form-switch mb-2">
                                                 <input class="form-check-input" type="checkbox" :id="'sg' + i"
                                                     x-model="e.signed" @change="mapChanged()">
@@ -220,23 +220,23 @@
                                             </div>
                                         </div>
                                         <div class="col-4 col-md-2">
-                                            <label class="form-label small">factor</label>
+                                            <label class="form-label small" x-text="t('can_factor')"></label>
                                             <input type="number" step="any" class="form-control form-control-sm"
                                                 :value="e.factor" @input="entryNumber(e, 'factor', $event)">
                                         </div>
                                         <div class="col-4 col-md-2">
-                                            <label class="form-label small">offset</label>
+                                            <label class="form-label small" x-text="t('can_offset')"></label>
                                             <input type="number" step="any" class="form-control form-control-sm"
                                                 :value="e.offset" @input="entryNumber(e, 'offset', $event)">
                                         </div>
-                                        <div class="col-8 col-md-2">
+                                        <div class="col-4 col-md-2">
                                             <label class="form-label small" x-text="t('can_timeout')"></label>
                                             <input type="number" min="100" max="60000" step="100"
                                                 class="form-control form-control-sm" :value="e.timeout"
                                                 @input="entryNumber(e, 'timeout', $event)">
                                         </div>
-                                        <div class="col-4 col-md-1 text-end">
-                                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        <div class="col-12 col-md-1 text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary px-3"
                                                 @click="removeEntry(i)"><i class="fas fa-trash"></i></button>
                                         </div>
                                     </div>

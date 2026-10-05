@@ -72,15 +72,17 @@ const RgGauge = (() => {
         for (let i = 0; i < n; i++) {
             const f = i / (n - 1), ang = a0 + span * f, major = i % sc.major_every === 0;
             const zone = zoneAt(sig.zones, sig.min + (sig.max - sig.min) * f);
-            const len = major ? 22 : 10;
-            line(ctx, polar(R - len, ang), polar(R, ang), major ? 4 : 2, zone ? zone.color : (major ? sc.color : GREY));
+            const len = major ? sc.tick_major_len : sc.tick_minor_len;
+            line(ctx, polar(R - len, ang), polar(R, ang), major ? sc.tick_major_width : sc.tick_minor_width,
+                zone ? zone.color : (major ? sc.color : GREY));
         }
         const nlab = Math.floor((n - 1) / sc.major_every) + 1;
         for (let k = 0; k < nlab; k++) {
             const f = nlab > 1 ? (k * sc.major_every) / (n - 1) : 0;
             const zone = zoneAt(sig.zones, sig.min + (sig.max - sig.min) * f);
-            const [x, y] = polar(R - 22 - 24, a0 + span * f);
-            ctx.font = '28px ' + FONT;
+            // Как на плате (lv_scale): радиус подписи = край - длина крупной риски - зазор.
+            const [x, y] = polar(R - sc.tick_major_len - sc.label_gap, a0 + span * f);
+            ctx.font = fontPx(sc.label_font) + 'px ' + FONT;
             ctx.fillStyle = zone ? zone.color : sc.text_color;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';

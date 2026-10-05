@@ -47,7 +47,6 @@ Controls
 --------
   Button 1, short press   next screen
   Button 1, hold 2 s      Wi-Fi access point
-  Button 1, hold 10 s     reset access: settings password and Wi-Fi back to defaults,
-                          the board restarts (a warning shows 3 s before)
+  Button 1, hold 10 s     clear a forgotten settings password (a warning shows 3 s before)
   Button 2                next screen (does not work while powered over Type-C)
   Swipe left / right      next / previous screen (touch builds)

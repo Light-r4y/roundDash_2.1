@@ -340,6 +340,39 @@
                                                                 class="form-control form-control-sm" :value="screen.label_div"
                                                                 @input="numberInput(screen, 'label_div', $event)">
                                                         </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_tick_major_len')"></label>
+                                                            <input type="number" min="2" max="80" class="form-control form-control-sm"
+                                                                :value="screen.tick_major_len" @input="numberInput(screen, 'tick_major_len', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_tick_minor_len')"></label>
+                                                            <input type="number" min="2" max="80" class="form-control form-control-sm"
+                                                                :value="screen.tick_minor_len" @input="numberInput(screen, 'tick_minor_len', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_tick_major_width')"></label>
+                                                            <input type="number" min="1" max="12" class="form-control form-control-sm"
+                                                                :value="screen.tick_major_width" @input="numberInput(screen, 'tick_major_width', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_tick_minor_width')"></label>
+                                                            <input type="number" min="1" max="12" class="form-control form-control-sm"
+                                                                :value="screen.tick_minor_width" @input="numberInput(screen, 'tick_minor_width', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_label_gap')"></label>
+                                                            <input type="number" min="0" max="80" class="form-control form-control-sm"
+                                                                :value="screen.label_gap" @input="numberInput(screen, 'label_gap', $event)">
+                                                        </div>
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_label_font')"></label>
+                                                            <select class="form-select form-select-sm" x-model="screen.label_font">
+                                                                <template x-for="f in fontOptions()" :key="f.v">
+                                                                    <option :value="f.v" x-text="f.l" :selected="f.v === screen.label_font"></option>
+                                                                </template>
+                                                            </select>
+                                                        </div>
                                                         <div class="col-4 col-md-3">
                                                             <label class="form-label small"
                                                                 x-text="t('ed_needle_color')"></label>
@@ -451,12 +484,12 @@
                                                 <template x-if="screen.has_range">
                                                     <div class="row g-2 mb-2">
                                                         <div class="col-6">
-                                                            <label class="form-label small">min</label>
+                                                            <label class="form-label small" x-text="t('ed_min')"></label>
                                                             <input type="number" class="form-control form-control-sm"
                                                                 :value="screen.min" @input="numberInput(screen, 'min', $event)">
                                                         </div>
                                                         <div class="col-6">
-                                                            <label class="form-label small">max</label>
+                                                            <label class="form-label small" x-text="t('ed_max')"></label>
                                                             <input type="number" class="form-control form-control-sm"
                                                                 :value="screen.max" @input="numberInput(screen, 'max', $event)">
                                                         </div>
@@ -824,12 +857,12 @@
                                                     x-model="s.unit">
                                             </div>
                                             <div class="col-4 col-md-2">
-                                                <label class="form-label small">min</label>
+                                                <label class="form-label small" x-text="t('ed_min')"></label>
                                                 <input type="number" class="form-control form-control-sm" :value="s.min"
                                                     @input="numberInput(s, 'min', $event)">
                                             </div>
                                             <div class="col-4 col-md-2">
-                                                <label class="form-label small">max</label>
+                                                <label class="form-label small" x-text="t('ed_max')"></label>
                                                 <input type="number" class="form-control form-control-sm" :value="s.max"
                                                     @input="numberInput(s, 'max', $event)">
                                             </div>

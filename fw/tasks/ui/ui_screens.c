@@ -18,7 +18,7 @@ static const char *TAG = "UI";
 #define RES 1000
 #define NEEDLE_MARGIN 55
 #define BLINK_HALF_PERIOD_MS 250 // мигание 2 Гц
-#define MAX_FONTS (RG_UI_MAX_SCREENS * RG_LAYOUT_MAX_WIDGETS)
+#define MAX_FONTS (RG_UI_MAX_SCREENS * (RG_LAYOUT_MAX_WIDGETS + 1)) // виджеты и подписи шкалы
 
 // Сигнал с параметрами, разобранными по таблице сигналов layout.
 typedef struct {
@@ -204,7 +204,7 @@ static void build_zones_on_scale(ui_screen_t *u)
     (void)c;
 }
 
-static void build_dial(ui_screen_t *u)
+static void build_dial(ui_set_t *set, ui_screen_t *u)
 {
     const roundGauge_screen_t *c = u->cfg;
     const int size = RG_UI_DIAL_SIZE;
@@ -238,12 +238,14 @@ static void build_dial(ui_screen_t *u)
     lv_scale_set_text_src(scale, u->label_ptrs);
 
     lv_obj_set_style_bg_opa(scale, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_text_font(scale, &lv_font_montserrat_28, LV_PART_INDICATOR);
+    lv_obj_set_style_text_font(scale, font_get(set, c->label_font), LV_PART_INDICATOR);
     lv_obj_set_style_text_color(scale, lv_color_hex(c->text_color), LV_PART_INDICATOR);
-    lv_obj_set_style_length(scale, 22, LV_PART_INDICATOR);
-    lv_obj_set_style_length(scale, 10, LV_PART_ITEMS);
-    lv_obj_set_style_line_width(scale, 4, LV_PART_INDICATOR);
-    lv_obj_set_style_line_width(scale, 2, LV_PART_ITEMS);
+    lv_obj_set_style_length(scale, c->tick_major_len, LV_PART_INDICATOR);
+    lv_obj_set_style_length(scale, c->tick_minor_len, LV_PART_ITEMS);
+    lv_obj_set_style_line_width(scale, c->tick_major_width, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(scale, c->tick_minor_width, LV_PART_ITEMS);
+    // LVGL ставит подпись на радиус: край - длина крупной риски - (15 + pad_radial).
+    lv_obj_set_style_pad_radial(scale, (int32_t)c->label_gap - 15, LV_PART_INDICATOR);
     lv_obj_set_style_line_color(scale, lv_color_hex(c->color), LV_PART_INDICATOR);
     lv_obj_set_style_line_color(scale, lv_palette_main(LV_PALETTE_GREY), LV_PART_ITEMS);
     lv_obj_set_style_arc_width(scale, 0, LV_PART_MAIN);
@@ -628,7 +630,7 @@ static void build_screen(ui_set_t *set, ui_screen_t *u, const roundGauge_screen_
 
     switch (c->type) {
     case RG_SCREEN_DIAL:
-        build_dial(u);
+        build_dial(set, u);
         break;
     case RG_SCREEN_RING:
         build_ring(u);
