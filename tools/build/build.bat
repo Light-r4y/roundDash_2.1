@@ -53,16 +53,16 @@ if errorlevel 1 (
 )
 
 echo === idf.py build ===
-REM RG_LOG_LEVEL=WARN - только для этого релизного билда (см. fw/CMakeLists.txt),
-REM обычный "idf.py build" без -D остаётся на INFO. Сбрасываем кэш обратно
-REM в INFO сразу после сборки, иначе следующий "idf.py build" тоже унаследует
-REM WARN из CMakeCache.txt.
-call idf.py -D RG_LOG_LEVEL=WARN build
+REM RG_LOG_LEVEL=WARN и RG_UI_SHOW_FPS=0 (без строк FPS на экране) - только для этого релизного
+REM билда (см. fw/CMakeLists.txt), обычный "idf.py build" без -D остаётся на INFO и с FPS.
+REM Сбрасываем кэш обратно сразу после сборки, иначе следующий "idf.py build" тоже
+REM унаследует эти значения из CMakeCache.txt.
+call idf.py -D RG_LOG_LEVEL=WARN -D RG_UI_SHOW_FPS=0 build
 if errorlevel 1 (
     echo Build failed.
     exit /b 1
 )
-call idf.py -D RG_LOG_LEVEL=INFO reconfigure >nul
+call idf.py -D RG_LOG_LEVEL=INFO -D RG_UI_SHOW_FPS=1 reconfigure >nul
 
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "TIMESTAMP=%%i"
 for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"') do set "BUILD_DATE=%%i"

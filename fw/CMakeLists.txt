@@ -29,6 +29,13 @@ if(NOT DEFINED RG_HAS_TOUCH)
 endif()
 idf_build_set_property(COMPILE_DEFINITIONS "RG_HAS_TOUCH=${RG_HAS_TOUCH}" APPEND)
 
+# Строки FPS и времени отрисовки сверху экрана: 1 (по умолчанию, для отладки) или 0 - "idf.py -D RG_UI_SHOW_FPS=0 build".
+# Релизная сборка tools/build/build.* передаёт 0. Значение -D живёт в кэше сборки.
+if(NOT DEFINED RG_UI_SHOW_FPS)
+    set(RG_UI_SHOW_FPS 1)
+endif()
+idf_build_set_property(COMPILE_DEFINITIONS "RG_UI_SHOW_FPS=${RG_UI_SHOW_FPS}" APPEND)
+
 # Версия приложения берётся ESP-IDF из version.txt рядом с этим файлом; его
 # переписывает tools/build/build.* (0.<YY>.<MMDD>).
 project(roundGauge)
@@ -37,6 +44,6 @@ project(roundGauge)
 #   www   — веб-интерфейс настройки, обновляется целиком;
 #   media — фоны, стрелки и прочие картинки приборки.
 # Оба заливаются вместе с прошивкой: idf.py flash возвращает media к базовому
-# набору из папки проекта и стирает загруженные через веб файлы — так решено.
+# набору из папки проекта и стирает загруженные через веб файлы.
 spiffs_create_partition_image(www ./www FLASH_IN_PROJECT)
 spiffs_create_partition_image(media ./media FLASH_IN_PROJECT)

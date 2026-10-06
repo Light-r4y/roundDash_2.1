@@ -145,8 +145,8 @@ idf.py -D RG_HAS_TOUCH=0 build   # экран без тач-панели
 ```
 
 Значение живёт в кэше сборки; вернуть тач — `idf.py -D RG_HAS_TOUCH=1 reconfigure`.
-Строки FPS сверху экрана отключаются константой `RG_UI_SHOW_FPS` в
-`fw/common/config/conf.h`. Подробнее — [docs/fw-design.md §10](docs/fw-design.md).
+Строки FPS сверху экрана включены в обычной сборке и выключены в релизной; вручную:
+`idf.py -D RG_UI_SHOW_FPS=0 build`. Подробнее — [docs/fw-design.md §10](docs/fw-design.md).
 
 ## 📦 Релизная сборка
 
@@ -197,8 +197,8 @@ python tools/webtest/mock_server.py
 | [Bootstrap](https://getbootstrap.com) 5.3.0 | `fw/www/bootstrap.min.css` | MIT |
 | Segment7 (Cedders, 2014), в виде LVGL-шрифтов 40/72/120 px | `fw/media/seg7_*.fnt` | SIL OFL 1.1 |
 | Фон `bg_carbon.bin`: текстура [Carbon Fiber](https://cc0-textures.com/t/st-carbon-fiber) (ShareTextures, M. Tolga Arslan), обработана | `fw/media/bg_carbon.bin` | CC0 |
-| Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), в виде LVGL-шрифтов | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
-| Black Ops One (Black-Ops Project Authors), изменён: скос контуров 24°, в виде LVGL-шрифтов | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
+| Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), в виде LVGL-шрифтов; ширина цифр выровнена | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
+| Black Ops One (Black-Ops Project Authors), изменён: скос контуров 24°, ширина цифр выровнена, в виде LVGL-шрифтов | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
 | [Font Awesome Free](https://fontawesome.com) 6.4.0 | `fw/www/fontawesome/` | иконки CC BY 4.0, шрифт SIL OFL 1.1, код MIT |
 
 LVGL (MIT) и компоненты Espressif (Apache-2.0) скачиваются при сборке и в

@@ -39,12 +39,12 @@ echo "=== gen_build_id ==="
 "$SCRIPT_DIR/gen_build_id.sh"
 
 echo "=== idf.py build ==="
-# RG_LOG_LEVEL=WARN - только для этого релизного билда (см. fw/CMakeLists.txt),
-# обычный "idf.py build" без -D остаётся на INFO. Сбрасываем кэш обратно в
-# INFO сразу после сборки, иначе следующий "idf.py build" тоже унаследует
-# WARN из CMakeCache.txt.
-idf.py -D RG_LOG_LEVEL=WARN build
-idf.py -D RG_LOG_LEVEL=INFO reconfigure >/dev/null
+# RG_LOG_LEVEL=WARN и RG_UI_SHOW_FPS=0 (без строк FPS на экране) - только для этого релизного
+# билда (см. fw/CMakeLists.txt), обычный "idf.py build" без -D остаётся на INFO и с FPS.
+# Сбрасываем кэш обратно сразу после сборки, иначе следующий "idf.py build" тоже
+# унаследует эти значения из CMakeCache.txt.
+idf.py -D RG_LOG_LEVEL=WARN -D RG_UI_SHOW_FPS=0 build
+idf.py -D RG_LOG_LEVEL=INFO -D RG_UI_SHOW_FPS=1 reconfigure >/dev/null
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"

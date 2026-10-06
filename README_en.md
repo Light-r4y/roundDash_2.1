@@ -153,7 +153,8 @@ idf.py -D RG_HAS_TOUCH=0 build   # a screen without a touch panel
 
 The value lives in the build cache; to get touch back run
 `idf.py -D RG_HAS_TOUCH=1 reconfigure`. The FPS lines at the top of the screen are
-turned off with the `RG_UI_SHOW_FPS` constant in `fw/common/config/conf.h`.
+on in a normal build and off in the release build; by hand:
+`idf.py -D RG_UI_SHOW_FPS=0 build`.
 More in [docs/fw-design.md §10](docs/fw-design.md).
 
 ## 📦 Release build
@@ -207,8 +208,8 @@ the board's API, including CAN with fake frames — see
 | [Bootstrap](https://getbootstrap.com) 5.3.0 | `fw/www/bootstrap.min.css` | MIT |
 | Segment7 (Cedders, 2014), as LVGL fonts at 40/72/120 px | `fw/media/seg7_*.fnt` | SIL OFL 1.1 |
 | Background `bg_carbon.bin`: [Carbon Fiber](https://cc0-textures.com/t/st-carbon-fiber) texture (ShareTextures, M. Tolga Arslan), processed | `fw/media/bg_carbon.bin` | CC0 |
-| Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), as LVGL fonts | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
-| Black Ops One (Black-Ops Project Authors), modified: outlines slanted 24°, as LVGL fonts | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
+| Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), as LVGL fonts; digit width equalized | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
+| Black Ops One (Black-Ops Project Authors), modified: outlines slanted 24°, digit width equalized, as LVGL fonts | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
 | [Font Awesome Free](https://fontawesome.com) 6.4.0 | `fw/www/fontawesome/` | icons CC BY 4.0, font SIL OFL 1.1, code MIT |
 
 LVGL (MIT) and Espressif components (Apache-2.0) are downloaded at build time
