@@ -25,7 +25,7 @@
 //       "label_gap": 15, "label_font": "28", "needle_image": "", "needle_px": -1, "needle_py": -1,
 //       "markers": [ { "value": 7000, "color": "#ff0000" } ],
 //       "widgets": [
-//         { "type": "value", "x": 0, "y": 60, "font": "48" },
+//         { "type": "value", "x": 0, "y": 60, "font": "48", "decimals": 2, "div": 1000 },
 //         { "type": "text",  "x": 0, "y": -90, "text": "RPM", "font": "28", "color": "#9e9e9e" } ] }
 //   ]
 // }
@@ -95,6 +95,7 @@ typedef struct {
     uint32_t color;    // текст, заливка, кружок
     uint32_t bg_color; // фон полосы и дуги
     int8_t decimals;   // value: -1 - как у сигнала
+    float div;         // value: показываемое число = значение / div (по умолчанию 1); зоны - по исходному
     bool zone_color;   // value, bar, arc: цвет по зоне сигнала
     bool blink;        // indicator: мигать 2 Гц
     char op;           // indicator: '>' или '<'

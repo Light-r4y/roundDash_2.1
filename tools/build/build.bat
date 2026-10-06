@@ -85,9 +85,19 @@ if errorlevel 1 (
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0gen_release_readme.ps1" -Version "%VERSION%" -BuildDate "%BUILD_DATE%" -OutFile "%RELEASE_DIR%\README.txt" -TemplateFile "%~dp0release_readme_template.txt" -ConfHeader "%FW_DIR%\common\config\conf.h"
 
+REM Портативный набор для прошивки на столе: esptool.exe, flash_all/update_firmware (.bat и .sh),
+REM и zip всей папки рядом с ней - см. package_release.py.
+echo === package_release ===
+python "%~dp0package_release.py" "%RELEASE_DIR%" "%VERSION%"
+if errorlevel 1 (
+    echo Failed to package the release.
+    exit /b 1
+)
+
 echo.
 echo === Done ===
 echo Version:      %VERSION%
 echo Release dir:  %RELEASE_DIR%
+echo Release zip:  %RELEASE_DIR%.zip
 
 endlocal

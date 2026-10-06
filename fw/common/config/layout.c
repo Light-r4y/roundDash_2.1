@@ -171,6 +171,7 @@ static bool parse_widget(const cJSON *j, roundGauge_widget_t *w)
     w->color = 0xFFFFFF;
     w->bg_color = 0x303030;
     w->decimals = -1;
+    w->div = 1.0f;
     w->op = '>';
     w->angle = 270;
     w->rotation = 135;
@@ -219,6 +220,10 @@ static bool parse_widget(const cJSON *j, roundGauge_widget_t *w)
     get_bool(j, "zone_color", &w->zone_color);
     get_bool(j, "blink", &w->blink);
     get_float(j, "threshold", &w->threshold);
+    get_float(j, "div", &w->div);
+    if (!(w->div > 0.0f)) {
+        w->div = 1.0f;
+    }
     const cJSON *op = cJSON_GetObjectItemCaseSensitive(j, "op");
     if (cJSON_IsString(op) && op->valuestring != NULL && (op->valuestring[0] == '>' || op->valuestring[0] == '<')) {
         w->op = op->valuestring[0];

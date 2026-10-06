@@ -4,22 +4,32 @@ Built:   {{BUILD_DATE}}
 
 Files
 -----
+  flash_all.bat / flash_all.sh           full flash of a board (see below)
+  update_firmware.bat / update_firmware.sh  update the firmware and web interface only
+  esptool.exe, esptool_LICENSE.txt       portable Windows flasher (esptool by Espressif, GPL-2.0)
   roundGauge_firmware_v{{VERSION}}.bin   application (ota_0)
   roundGauge_www_v{{VERSION}}.bin        web interface (www partition)
-  roundGauge_media_v{{VERSION}}.bin      dashboard images (media partition)
+  roundGauge_media_v{{VERSION}}.bin      dashboard images and fonts (media partition)
   bootloader.bin, partition-table.bin, ota_data_initial.bin
   flash_args                             esptool flags and partition offsets
 
-Flashing a board over USB
--------------------------
-Connect the board's Type-C port and run from this folder:
+Flashing a board over USB (Windows: nothing to install)
+-------------------------------------------------------
+Unpack the zip, connect the board's Type-C port and double-click flash_all.bat.
+If several serial ports are present, give the port: flash_all.bat COM5.
+UNPLUG the 12 V supply before flashing over USB. Takes about two minutes.
+
+  flash_all.bat         everything: bootloader, partitions, firmware, web interface,
+                        media. Screen layout, CAN mapping table, settings and password
+                        are stored in NVS and are kept; images and fonts in media are
+                        replaced by the base set.
+  update_firmware.bat   only the firmware and the web interface: the images and fonts
+                        you uploaded to media stay. Use it for ordinary updates.
+
+Linux / macOS: flash_all.sh and update_firmware.sh do the same with esptool from
+pip (pip install esptool). The same flash can be done by hand:
 
   python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"
-
-This writes the application, the web interface and the media partition: images
-and fonts uploaded through the web interface are replaced with the base set.
-Screen layout, CAN mapping table, settings and password are stored in NVS and are
-kept.
 
 Configuring over Wi-Fi
 ----------------------
@@ -48,5 +58,5 @@ Controls
   Button 1, short press   next screen
   Button 1, hold 2 s      Wi-Fi access point
   Button 1, hold 10 s     clear a forgotten settings password (a warning shows 3 s before)
-  Button 2                next screen (does not work while powered over Type-C)
+  Button 2                brightness cycle 100 / 60 / 30 / 10 % (does not work while powered over Type-C)
   Swipe left / right      next / previous screen (touch builds)

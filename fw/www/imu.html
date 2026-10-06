@@ -130,12 +130,20 @@
 
                             <hr class="my-3">
                             <div class="small mb-2" x-text="t('imu_fwd_manual')"></div>
-                            <div class="btn-group btn-group-sm">
-                                <template x-for="n in [0, 1, 2, 3]" :key="n">
-                                    <button type="button" class="btn"
-                                        :class="s && s.fwd === n ? 'btn-accent' : 'btn-outline-secondary'"
-                                        :disabled="busy || controlsLocked() || !sensorOk" @click="setForward(n)"
-                                        x-text="t('imu_variant') + ' ' + (n + 1)"></button>
+                            <div class="small text-muted mb-2" x-text="t('imu_fwd_live')"></div>
+                            <div class="row g-2">
+                                <template x-for="v in fwdVariants()" :key="v.n">
+                                    <div class="col-6 col-md-3">
+                                        <button type="button" class="btn btn-sm w-100 lh-sm" :class="v.cls"
+                                            :disabled="busy || controlsLocked() || !sensorOk" @click="setForward(v.n)">
+                                            <span x-text="t('imu_variant') + ' ' + (v.n + 1)"></span><br>
+                                            <small x-text="t('imu_axis') + ' ' + v.axis"></small>
+                                        </button>
+                                        <div class="progress mt-1" style="height:6px">
+                                            <div class="progress-bar" :class="v.hot ? 'bg-warning' : 'bg-secondary'"
+                                                :style="'width:' + v.pct + '%'"></div>
+                                        </div>
+                                    </div>
                                 </template>
                             </div>
                             <div class="form-text" x-text="t('imu_fwd_manual_hint')"></div>

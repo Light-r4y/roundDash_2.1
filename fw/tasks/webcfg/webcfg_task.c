@@ -721,6 +721,19 @@ static esp_err_t can_map_get_handler(httpd_req_t *req)
     return ret;
 }
 
+// Вернуть привязки к пресету rusEFI (стирает сохранённую таблицу).
+static esp_err_t can_map_reset_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    if (roundGauge_can_map_reset() != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Reset failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t can_map_post_handler(httpd_req_t *req)
 {
     if (!check_auth(req)) {
@@ -934,13 +947,15 @@ static esp_err_t imu_get_handler(httpd_req_t *req)
     static const char *const det[] = { "idle", "armed", "done", "timeout" };
     roundGauge_imu_state_t s;
     roundGauge_imu_get_state(&s);
-    char json[320];
+    roundGauge_imu_settings_t cfg;
+    roundGauge_settings_get_imu(&cfg);
+    char json[400];
     snprintf(json, sizeof(json),
              "{\"ok\":%s,\"calibrated\":%s,\"fwd\":%u,\"cal\":\"%s\",\"detect\":\"%s\","
-             "\"raw\":[%.3f,%.3f,%.3f],\"lon\":%.3f,\"lat\":%.3f,\"vert\":%.3f,\"tot\":%.3f}",
+             "\"raw\":[%.3f,%.3f,%.3f],\"g0\":[%.3f,%.3f,%.3f],\"lon\":%.3f,\"lat\":%.3f,\"vert\":%.3f,\"tot\":%.3f}",
              s.ok ? "true" : "false", s.calibrated ? "true" : "false", (unsigned)s.fwd, cal[s.cal & 3], det[s.fwd_detect & 3],
-             (double)s.raw[0], (double)s.raw[1], (double)s.raw[2], (double)s.lon, (double)s.lat, (double)s.vert,
-             (double)s.tot);
+             (double)s.raw[0], (double)s.raw[1], (double)s.raw[2], (double)cfg.g0[0], (double)cfg.g0[1], (double)cfg.g0[2],
+             (double)s.lon, (double)s.lat, (double)s.vert, (double)s.tot);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -1012,7 +1027,7 @@ static void start_http_server(void)
     cfg.task_priority = RG_HTTPD_PRIORITY;
     cfg.core_id = RG_HTTPD_CORE;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 32;
+    cfg.max_uri_handlers = 36;
     cfg.recv_wait_timeout = 10;
 
     httpd_handle_t server = NULL;
@@ -1047,6 +1062,7 @@ static void start_http_server(void)
         {.uri = "/api/can", .method = HTTP_POST, .handler = can_post_handler},
         {.uri = "/api/can/map", .method = HTTP_GET, .handler = can_map_get_handler},
         {.uri = "/api/can/map", .method = HTTP_POST, .handler = can_map_post_handler},
+        {.uri = "/api/can/map/reset", .method = HTTP_POST, .handler = can_map_reset_handler},
         {.uri = "/api/can/frames", .method = HTTP_GET, .handler = can_frames_handler},
         {.uri = "/media/*", .method = HTTP_GET, .handler = media_get_handler},
         {.uri = "/*", .method = HTTP_GET, .handler = www_get_handler},

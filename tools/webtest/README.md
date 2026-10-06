@@ -14,7 +14,7 @@ python tools/webtest/mock_server.py
 
 Затем открыть в браузере:
 
-- `http://localhost:8088/` — главная: состояние, яркость, пароль на настройки
+- `http://localhost:8088/` — главная: состояние, яркость
 - `http://localhost:8088/editor.html` — редактор экранов
 - `http://localhost:8088/media.html` — картинки и шрифты
 - `http://localhost:8088/can.html` — настройки CAN, привязки, сниффер
@@ -37,7 +37,8 @@ python tools/webtest/mock_server.py
   - `/api/layout`, `/api/layout/reset` — раскладка проверяется так же, как в прошивке
     (JSON, хотя бы один годный экран, до 16 КБ, не больше 4 разных фонов);
   - `/api/media`, `/api/media/delete`, `/media/<файл>` — файлы хранятся в памяти;
-  - `/api/can`, `/api/can/map`, `/api/can/frames` — настройки и привязки хранятся в
+  - `/api/can`, `/api/can/map` (по умолчанию пресет rusEFI из `can_map_default.h`), `/api/can/map/reset`,
+    `/api/can/frames` — настройки и привязки хранятся в
     памяти, `frames` отдаёт поддельные кадры с меняющимися данными (ID `0x201`,
     `0x3B3`, `0x420`, `0x7E8` и один 29-битный). Как и плата, первый запрос после
     паузы возвращает пустой список: приём чужих ID включается самим запросом;

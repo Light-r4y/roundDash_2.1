@@ -8,6 +8,7 @@
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 #include "src/misc/cache/instance/lv_image_header_cache.h"
+#include "src/image/lv_image_decoder_private.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -665,6 +666,66 @@ static void destroy_set(ui_set_t *set)
     free(set);
 }
 
+// Прогрев кэша картинок. LVGL читает .bin из flash в RAM при первой отрисовке, то есть при первом показе
+// экрана (фон 480x480 - 450 КБ, порядка сотен миллисекунд): отсюда просадка FPS при первом переключении.
+// Здесь открываем и сразу закрываем каждую картинку раскладки: запись остаётся в кэше (ключ - путь и тип
+// источника, параметры открытия в него не входят), и первый показ экрана идёт без загрузки с flash.
+static void preload_images(const roundGauge_layout_t *l)
+{
+    const char *seen[RG_UI_MAX_SCREENS * (2 + RG_LAYOUT_MAX_WIDGETS)];
+    int n_seen = 0;
+    uint32_t bytes = 0;
+    int loaded = 0;
+    int64_t t_all = esp_timer_get_time();
+
+    for (size_t i = 0; i < l->count; i++) {
+        const roundGauge_screen_t *s = &l->screens[i];
+        const char *names[2 + RG_LAYOUT_MAX_WIDGETS];
+        int n = 0;
+        names[n++] = s->bg_image;
+        if (s->type == RG_SCREEN_DIAL) {
+            names[n++] = s->needle_image;
+        }
+        for (size_t k = 0; k < s->widget_count; k++) {
+            names[n++] = s->widgets[k].image;
+        }
+        for (int j = 0; j < n; j++) {
+            const char *name = names[j];
+            if (name[0] == '\0' || !media_file_exists(name)) {
+                continue;
+            }
+            bool dup = false;
+            for (int q = 0; q < n_seen && !dup; q++) {
+                dup = strcmp(seen[q], name) == 0;
+            }
+            if (dup || n_seen >= (int)(sizeof(seen) / sizeof(seen[0]))) {
+                continue;
+            }
+            seen[n_seen++] = name;
+
+            char src[48];
+            media_src(name, src, sizeof(src));
+            int64_t t0 = esp_timer_get_time();
+            lv_image_decoder_dsc_t dsc;
+            if (lv_image_decoder_open(&dsc, src, NULL) == LV_RESULT_OK) {
+                uint32_t sz = dsc.decoded != NULL ? dsc.decoded->data_size : 0;
+                lv_image_decoder_close(&dsc);
+                bytes += sz;
+                loaded++;
+                ESP_LOGI(TAG, "Preloaded %s: %u KB, %d ms", name, (unsigned)(sz / 1024),
+                         (int)((esp_timer_get_time() - t0) / 1000));
+            } else {
+                ESP_LOGW(TAG, "Preload of %s failed", name);
+            }
+        }
+    }
+    ESP_LOGI(TAG, "Image preload: %d files, %u KB decoded, cache %u KB, %d ms", loaded, (unsigned)(bytes / 1024),
+             (unsigned)(LV_CACHE_DEF_SIZE / 1024), (int)((esp_timer_get_time() - t_all) / 1000));
+    if (bytes > LV_CACHE_DEF_SIZE) {
+        ESP_LOGW(TAG, "Images do not fit the cache: some will be reloaded from flash on screen switches");
+    }
+}
+
 void ui_screens_rebuild(const roundGauge_layout_t *layout)
 {
     // Картинки могли смениться под тем же именем - кэш декодера устарел.
@@ -691,6 +752,7 @@ void ui_screens_rebuild(const roundGauge_layout_t *layout)
     if (s_set != NULL) {
         ns->cur = s_set->cur < ns->count ? s_set->cur : ns->count - 1;
     }
+    preload_images(&ns->layout);
     lv_screen_load(ns->s[ns->cur].scr);
 
     ui_set_t *old = s_set;
@@ -766,12 +828,13 @@ static void update_widget(ui_widget_t *w, bool force)
 
     switch (c->type) {
     case RG_WIDGET_VALUE: {
-        int32_t key = ok ? (int32_t)lroundf(v * P10[w->sig.decimals]) : INT32_MIN;
+        const float shown = v / c->div; // div = 1 по умолчанию; зоны ниже - по исходному значению
+        int32_t key = ok ? (int32_t)lroundf(shown * P10[w->sig.decimals]) : INT32_MIN;
         if (first || key != w->key) {
             if (ok) {
                 // snprintf из libc: встроенный sprintf LVGL не умеет %f.
                 char txt[24];
-                snprintf(txt, sizeof(txt), "%.*f", (int)w->sig.decimals, (double)v);
+                snprintf(txt, sizeof(txt), "%.*f", (int)w->sig.decimals, (double)shown);
                 lv_label_set_text(w->obj, txt);
             } else {
                 lv_label_set_text(w->obj, "--");

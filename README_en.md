@@ -13,10 +13,10 @@ Firmware for a car dashboard on the round touch screen
 from a web page over Wi-Fi, and it is operated with two buttons on the board's
 connector and swipes on the screen.
 
-> 🧪 **Status: working prototype.** Screens, the editor, image upload and the
-> access point have been tested on the board. **CAN reception from a real bus,
-> over-the-air update (`/ota`), the web home page (brightness, password) and some
-> widgets have not been tested on hardware yet** — the full list is in
+> 🧪 **Status: working prototype.** Screens, the editor, image upload, the access point,
+> the g-meter, backgrounds, needles and fonts have been tested on the board. **CAN
+> reception from a real bus, over-the-air update (`/ota`), the "Access" page and some
+> widgets have not been tested on hardware** — the list is in
 > [docs/fw-design.md §11](docs/fw-design.md) (in Russian).
 
 ## ✨ Features
@@ -24,14 +24,26 @@ connector and swipes on the screen.
 | | What | Status |
 |---|---|---|
 | 🖥️ | ST7701S 480×480 screen, LVGL 9, two frame buffers, no tearing | ✅ works |
-| 🎨 | Up to 8 screens of four types — dial, ring fill, plain number — and up to 4 extra widgets on each (number, text, image, conditional indicator, bar, mini arc); backgrounds and needles from images | ✅ works (`bar`/`arc`/`indicator` and custom fonts — 🧪) |
+| 🎨 | Up to 8 screens of four types — dial, ring fill, plain number, g-meter — and up to 4 extra widgets on each (number, text, image, conditional indicator, bar, mini arc); backgrounds and needles from images, configurable scale ticks, needle pivot | ✅ works (`bar`/`arc`/`indicator` — 🧪) |
+| 🔤 | Base set in `fw/media`: 18 fonts (Orbitron, Michroma, Russo One and Jura with Cyrillic, Black Ops One Slant, Segment7), 4 backgrounds (carbon, HUD grid, brushed metal, perforation), 3 needles; the built-in layout has 5 screens, including AFR | ✅ works |
 | 📐 | G-meter: QMI8658 accelerometer, g-forces as a dot on a round grid with a trail and maxima (as in racing cars); gravity calibration at any board tilt, signals `g_lon`/`g_lat`/`g_vert`/`g_tot` are available to any widget | ✅ works on the board (axis and calibration accuracy — 🧪) |
 | 👆 | Swipe left/right to switch screens; a build option for a screen without touch (`RG_HAS_TOUCH=0`) | ✅ works |
-| 🔘 | Button 1: short press — next screen, hold — access point; button 2 — next screen | ✅ works |
-| 🚌 | CAN (TWAI) reception, DBC-style signal-to-frame mapping, data timeouts, web sniffer, "demo" mode with a generator | 🧪 written, not tested on a bus |
-| 📶 | Wi-Fi access point on a long press of button 1; the screen shows a card with the network name, password and address, then an icon with the client count | ✅ access point, 🧪 card |
-| 🌐 | Web interface: home (status, brightness, password), screen editor with preview and drag & drop, media, CAN, update; RU/EN, light/dark theme | ✅ editor and media, 🧪 home |
+| 🔘 | Button 1: short press — next screen, hold — access point; button 2 — brightness cycle (100 / 60 / 30 / 10 %) | ✅ works |
+| 🚌 | CAN (TWAI) reception, a ready-made rusEFI mapping preset out of the box, DBC-style signal-to-frame mapping, data timeouts, web sniffer, "demo" mode with a generator | 🧪 written, not tested on a bus |
+| 📶 | Wi-Fi access point on a long press of button 1; the screen shows a card with the network name, password and address, then an icon with the client count; the name and password are set in the web interface | ✅ access point, 🧪 card |
+| 🌐 | Web interface: home (status, brightness), screen editor with preview and drag & drop, media, CAN, sensor, "Access" (settings password, Wi-Fi name and password), update; RU/EN, light/dark theme | ✅ editor, media, sensor; 🧪 home and "Access" |
 | 🔄 | Firmware and web interface updates via `/ota`, rollback of a failed update | 🧪 written, not tested on the board |
+
+## 🖼️ What it looks like
+
+<p align="center">
+<img src="docs/img/screen_1_rpm.webp" width="190" alt="RPM"> <img src="docs/img/screen_2_coolant.webp" width="190" alt="COOLANT"> <img src="docs/img/screen_3_afr.webp" width="190" alt="AFR"> <img src="docs/img/screen_4_speed.webp" width="190" alt="SPEED"> <img src="docs/img/screen_5_gmeter.webp" width="190" alt="G-meter">
+</p>
+
+The five screens of the built-in layout: RPM (carbon), COOLANT (brushed metal), AFR (HUD grid),
+SPEED (perforation), g-meter (HUD grid). These are not photos of the board but a render of the
+layout by the same code that draws the editor preview, with the real backgrounds, needles and fonts
+of the base set (values: 3680 rpm, 88 °C, AFR 13.4, 124 km/h).
 
 ## 🔧 Hardware
 
@@ -70,7 +82,7 @@ Everything connects to the J9 "12PIN Multi-function Interface" connector:
 ├── docs/fw-design.md   firmware design, decisions, open questions
 ├── hw/                 board schematic, datasheets, mechanical drawings
 └── tools/
-    ├── build/          release build
+    ├── build/          release build and the portable flashing kit
     └── webtest/        mock server for the web interface
 ```
 
@@ -109,8 +121,9 @@ picked up.
 
 ### First run
 
-After flashing, the screen shows three built-in screens: RPM (dial), COOLANT
-(ring), SPEED (number). There is no data yet, so the values show `--`. To see
+After flashing, the screen shows five built-in screens: RPM (dial, carbon), COOLANT
+(ring, brushed metal), AFR (mixture, a dial on the HUD grid with a neon needle),
+SPEED (number, perforation) and the g-meter (HUD grid). Without a bus the values show `--`. To see
 them alive without a bus:
 
 1. **Hold button 1 for two seconds** — a card with the network name
@@ -120,7 +133,7 @@ them alive without a bus:
 4. **Screens** — the look: drag widgets on the preview; "Apply to gauge" sends
    the layout to the board immediately. **Sensor** — calibrating the accelerometer
    for the g-force screen.
-5. **Media** — your own backgrounds, needles and fonts.
+5. **Media** — your own backgrounds, needles and fonts. **Access** — the settings password and the Wi-Fi name and password.
 
 ### Controls
 
@@ -129,7 +142,7 @@ them alive without a bus:
 | Button 1, short press | next screen |
 | Button 1, hold 2 s | Wi-Fi access point |
 | Button 1, hold 10 s | clear a forgotten settings password (a warning is shown 3 s before) |
-| Button 2 | next screen |
+| Button 2 | brightness cycle: 100 → 60 → 30 → 10 → 100 % (remembered) |
 | Swipe left / right | next / previous screen |
 
 ### Build options
@@ -154,15 +167,26 @@ The script activates ESP-IDF by itself if needed, writes the version
 `0.<YY>.<MMDD>` to `fw/version.txt`, builds with WARN log level and puts a
 complete kit into `releases/roundGauge_v<version>_<time>/`: the firmware, the
 `www` and `media` images, bootloader, partition table, `ota_data_initial.bin`
-and `flash_args`. A new board is flashed from that folder with one command:
+and `flash_args`, plus a **portable kit for flashing on the desk**: `esptool.exe`
+(downloaded once from GitHub into `tools/build/.cache`, the version is pinned in
+`tools/build/package_release.py`), `flash_all.bat` and `update_firmware.bat` (and `.sh`
+for Linux/macOS). Next to the folder there is a
+`releases/roundGauge_v<version>_<time>.zip` with the same contents: unpack it on any
+Windows PC, connect the board and run `flash_all.bat` — nothing to install
+(over Type-C, with the 12 V supply unplugged; pass the port if needed: `flash_all.bat COM5`).
+
+- `flash_all.bat` — full flash (bootloader, partition table, firmware, web, media) at
+  460800. The `media` partition is replaced with the base set (images uploaded through
+  the web disappear); the screen layout, the CAN table, the settings and the password
+  live in NVS and are kept.
+- `update_firmware.bat` — only the firmware and the web interface: images and fonts in
+  `media` are kept.
+
+By hand the same is done with:
 
 ```bash
 python -m esptool --chip esp32s3 -b 460800 --before default-reset --after hard-reset write-flash "@flash_args"
 ```
-
-Flashing replaces the `media` partition with the base set (images uploaded
-through the web disappear); the screen layout, the CAN table, the settings and
-the password live in NVS and are kept.
 
 ## 🌐 Web interface without hardware
 
@@ -182,6 +206,7 @@ the board's API, including CAN with fake frames — see
 | [Alpine.js](https://alpinejs.dev) 3.14.1 | `fw/www/alpine.min.js` | MIT |
 | [Bootstrap](https://getbootstrap.com) 5.3.0 | `fw/www/bootstrap.min.css` | MIT |
 | Segment7 (Cedders, 2014), as LVGL fonts at 40/72/120 px | `fw/media/seg7_*.fnt` | SIL OFL 1.1 |
+| Background `bg_carbon.bin`: [Carbon Fiber](https://cc0-textures.com/t/st-carbon-fiber) texture (ShareTextures, M. Tolga Arslan), processed | `fw/media/bg_carbon.bin` | CC0 |
 | Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), as LVGL fonts | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
 | Black Ops One (Black-Ops Project Authors), modified: outlines slanted 24°, as LVGL fonts | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
 | [Font Awesome Free](https://fontawesome.com) 6.4.0 | `fw/www/fontawesome/` | icons CC BY 4.0, font SIL OFL 1.1, code MIT |

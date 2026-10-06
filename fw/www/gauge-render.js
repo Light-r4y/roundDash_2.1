@@ -36,6 +36,11 @@ const RgGauge = (() => {
 
     // Размер шрифта в предпросмотре: встроенные 14/28/48; у своего .fnt - число перед расширением
     // в имени (seg7_120.fnt -> 120), иначе 28. Шрифт файла браузер не знает, рисуется запасным.
+    // Имя файла шрифта -> шаблон CSS-шрифта с {px} (для обзорных картинок: '800 {px} Orbitron'). В редакторе пусто:
+    // свой .fnt рисуется запасным шрифтом.
+    const fontMap = {};
+    const fontCss = (name, px) => (fontMap[name] ? fontMap[name].replace('{px}', px + 'px') : px + 'px ' + FONT);
+
     const fontPx = (name) => {
         if (name === '14') return 14;
         if (name === '48') return 48;
@@ -89,7 +94,7 @@ const RgGauge = (() => {
             const zone = zoneAt(sig.zones, sig.min + (sig.max - sig.min) * f);
             // Как на плате (lv_scale): радиус подписи = край - длина крупной риски - зазор.
             const [x, y] = polar(R - sc.tick_major_len - sc.label_gap, a0 + span * f);
-            ctx.font = fontPx(sc.label_font) + 'px ' + FONT;
+            ctx.font = fontCss(sc.label_font, fontPx(sc.label_font));
             ctx.fillStyle = zone ? zone.color : sc.text_color;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -238,12 +243,12 @@ const RgGauge = (() => {
     // ---- дополнительные виджеты ----
     function textSize(ctx, w, text) {
         const px = fontPx(w.font);
-        ctx.font = px + 'px ' + FONT;
+        ctx.font = fontCss(w.font, px);
         return [Math.max(ctx.measureText(text).width, px * 0.6), px];
     }
 
     function widgetText(w, sig, v) {
-        return w.type === 'text' ? w.text : (v == null ? '--' : v.toFixed(Math.min(Math.max(sig.decimals | 0, 0), 10)));
+        return w.type === 'text' ? w.text : (v == null ? '--' : (v / (w.div > 0 ? w.div : 1)).toFixed(Math.min(Math.max(sig.decimals | 0, 0), 10)));
     }
 
     // Рамка виджета на экране: [x, y, w, h] в пикселях canvas.
@@ -270,7 +275,7 @@ const RgGauge = (() => {
         const color = zone ? zone.color : w.color;
 
         if (w.type === 'value' || w.type === 'text') {
-            ctx.font = fontPx(w.font) + 'px ' + FONT;
+            ctx.font = fontCss(w.font, fontPx(w.font));
             ctx.fillStyle = color;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -388,5 +393,5 @@ const RgGauge = (() => {
         return -1;
     }
 
-    return { draw, hitTest, sigDef, mainSig, gmeterPoint, gmeterTrack, SIZE };
+    return { draw, hitTest, sigDef, mainSig, gmeterPoint, gmeterTrack, fontMap, SIZE };
 })();

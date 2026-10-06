@@ -1,7 +1,7 @@
 // Страница CAN: настройки шины, таблица привязок сигналов к кадрам и сниффер.
 // Правила проверки привязок здесь должны совпадать с can_map.c (parse_entry).
 const RG_CAN_MAP_MAX = 16;
-const RG_CAN_BITRATES = [50000, 100000, 125000, 250000, 500000, 800000, 1000000];
+const RG_CAN_BITRATES = [50000, 100000, 125000, 250000, 500000, 1000000];
 const RG_CAN_STATES = ['active', 'warning', 'passive', 'bus_off'];
 
 // Влезает ли поле целиком в 8 байт - как roundGauge_can_extract() в прошивке.
@@ -110,6 +110,23 @@ function canPage() {
                 this.mapDirty = false;
             } catch (e) {
                 this.say(this.t('can_err_load') + ': ' + e.message, 'danger');
+            }
+        },
+
+        // Вернуть таблицу к встроенному пресету rusEFI (плата стирает сохранённую и берёт свою).
+        async resetMapPreset() {
+            if (this.busy || !confirm(this.t('can_preset_confirm'))) return;
+            this.busy = true;
+            try {
+                const res = await this.authFetch('/api/can/map/reset', { method: 'POST' });
+                if (res.status === 401) return;
+                if (!res.ok) throw new Error((await res.text()) || ('HTTP ' + res.status));
+                await this.loadMap();
+                this.say(this.t('can_preset_done'), 'success');
+            } catch (e) {
+                this.say(this.t('can_err_apply') + ': ' + e.message, 'danger');
+            } finally {
+                this.busy = false;
             }
         },
 
@@ -272,19 +289,31 @@ function canPage() {
                     const k = this.key(f);
                     const p = this.prev[k];
                     const bytes = f.data.match(/../g) || [];
-                    let rate = 0;
-                    if (p && now > p.t) rate = Math.max(0, Math.round((f.count - p.count) * 1000 / (now - p.t)));
+                    // Период кадра = время окна / число кадров в нём. Окно растёт, пока кадров нет,
+                    // и сдвигается, когда накопилось >= 0,5 с и хотя бы один кадр; нет кадров 3 с - прочерк.
+                    let period = p ? p.period : null, aCount = p ? p.aCount : f.count, aT = p ? p.aT : now;
+                    if (p) {
+                        const dt = now - aT, dc = f.count - aCount;
+                        if (dc > 0 && dt >= 500) { period = dt / dc; aCount = f.count; aT = now; }
+                        else if (dc === 0 && dt >= 3000) { period = null; aT = now; }
+                    }
                     if (p) {
                         const ch = this.changed[k] || (this.changed[k] = {});
                         bytes.forEach((b, i) => { if (p.bytes[i] !== b) ch[i] = now; });
                     }
-                    nextPrev[k] = { bytes, count: f.count, t: now };
-                    out.push({ ...f, k, bytes, rate });
+                    nextPrev[k] = { bytes, count: f.count, t: now, period, aCount, aT };
+                    out.push({ ...f, k, bytes, period });
                 }
                 this.prev = nextPrev;
                 out.sort((a, b) => (a.ext - b.ext) || (a.id - b.id));
                 this.frames = out;
             } catch (e) { /* плата занята - следующий опрос */ }
+        },
+
+        // Период кадра, мс: до 100 - с десятыми, дальше целые; нет данных - прочерк.
+        periodText(f) {
+            if (f.period == null) return '-';
+            return (f.period < 100 ? f.period.toFixed(1) : Math.round(f.period)) + ' ' + this.t('can_ms');
         },
 
         // Байт изменился меньше секунды назад - подсвечиваем.

@@ -27,7 +27,7 @@ const rgScreenDefault = (type, key) => (RG_SCREEN_TYPE_DEFAULTS[type] && key in 
 
 const RG_WIDGET_DEFAULTS = {
     type: 'value', x: 0, y: 0, w: 0, h: 0, signal: '', font: '', text: '', image: '',
-    color: '#ffffff', bg_color: '#303030', decimals: -1, zone_color: false, blink: false,
+    color: '#ffffff', bg_color: '#303030', decimals: -1, div: 1, zone_color: false, blink: false,
     op: '>', threshold: 0, angle: 270, rotation: 135, width: 12,
 };
 // Отличия по типам - как в parse_widget (layout.c).
@@ -41,7 +41,7 @@ const RG_WIDGET_TYPE_DEFAULTS = {
 };
 // Какие поля имеют смысл у каждого типа (только они уходят в JSON).
 const RG_WIDGET_FIELDS = {
-    value: ['x', 'y', 'signal', 'font', 'color', 'decimals', 'zone_color'],
+    value: ['x', 'y', 'signal', 'font', 'color', 'decimals', 'div', 'zone_color'],
     text: ['x', 'y', 'text', 'font', 'color'],
     image: ['x', 'y', 'image'],
     indicator: ['x', 'y', 'signal', 'w', 'color', 'image', 'op', 'threshold', 'blink'],

@@ -1,4 +1,5 @@
 #include "can_map.h"
+#include "can_map_default.h"
 #include <stdlib.h>
 #include <string.h>
 #include "cJSON.h"
@@ -236,9 +237,17 @@ void roundGauge_can_map_init(void)
         ESP_LOGI(TAG, "CAN map from NVS: %u entries", (unsigned)tmp->count);
     } else {
         if (json != NULL) {
-            ESP_LOGW(TAG, "Stored CAN map is broken, starting empty");
+            ESP_LOGW(TAG, "Stored CAN map is broken, using the rusEFI preset");
         }
         memset(tmp, 0, sizeof(*tmp));
+        ok = false;
+        // Нет сохранённой таблицы (или она битая): пресет rusEFI. Явно сохранённая пустая таблица
+        // разбирается выше и остаётся пустой.
+        if (!parse(RG_CAN_MAP_DEFAULT_JSON, tmp, &ok) || !ok) {
+            memset(tmp, 0, sizeof(*tmp));
+        } else {
+            ESP_LOGI(TAG, "CAN map: built-in rusEFI preset, %u entries", (unsigned)tmp->count);
+        }
     }
     free(json);
     set_current(tmp);
@@ -280,11 +289,44 @@ esp_err_t roundGauge_can_map_apply_json(const char *json)
     return err;
 }
 
+esp_err_t roundGauge_can_map_reset(void)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(RG_SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = nvs_erase_key(h, RG_CAN_MAP_NVS_KEY);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        err = ESP_OK;
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    roundGauge_can_map_t *m = calloc(1, sizeof(*m));
+    if (m == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    bool ok = false;
+    if (parse(RG_CAN_MAP_DEFAULT_JSON, m, &ok) && ok) {
+        set_current(m);
+        ESP_LOGI(TAG, "CAN map reset to the rusEFI preset: %u entries", (unsigned)m->count);
+    } else {
+        err = ESP_FAIL;
+    }
+    free(m);
+    return err;
+}
+
 char *roundGauge_can_map_json_dup(void)
 {
     char *json = nvs_load_json();
     if (json == NULL) {
-        json = strdup("{\"version\":1,\"map\":[]}");
+        json = strdup(RG_CAN_MAP_DEFAULT_JSON); // сохранённой нет - действует пресет rusEFI
     }
     return json;
 }

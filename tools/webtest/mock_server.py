@@ -46,6 +46,7 @@ WWW_DIR = os.path.join(ROOT, "fw", "www")
 VERSION_FILE = os.path.join(ROOT, "fw", "version.txt")
 OTA_PAGE_H = os.path.join(ROOT, "fw", "tasks", "webcfg", "ota_page.h")
 LAYOUT_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "layout_default.h")
+CAN_MAP_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "can_map_default.h")
 LAYOUT_JSON_MAX = 16384   # RG_LAYOUT_JSON_MAX
 UI_MAX_BG_IMAGES = 4      # RG_UI_MAX_BG_IMAGES
 MEDIA_MAX_FILE = 1000000  # RG_MEDIA_MAX_FILE
@@ -68,6 +69,14 @@ def load_default_layout():
     return "".join(parts).replace('\\"', '"')
 
 
+def load_default_can_map():
+    """Пресет rusEFI из того же can_map_default.h, что компилируется в прошивку."""
+    with open(CAN_MAP_DEFAULT_H, encoding="utf-8") as f:
+        text = f.read()
+    pieces = re.findall(r'"((?:[^"\\]|\\.)*)"', text[text.index("RG_CAN_MAP_DEFAULT_JSON"):])
+    return "".join(pieces).replace('\\"', '"')
+
+
 lock = threading.Lock()
 
 state = {
@@ -77,7 +86,7 @@ state = {
     "layout": None,             # сохранённый layout (str); None - встроенный
     "media": {},                # имя -> байты, как раздел media на плате
     "can_cfg": {"bitrate": 500000, "mode": "listen_only", "demo": False},
-    "can_map": '{"version":1,"map":[]}',  # сохранённая таблица привязок (str)
+    "can_map": None,  # сохранённая таблица привязок (str); None - действует пресет rusEFI
     "brightness": 100,
     "wifi": {"ssid": "", "password": "roundgauge"},
     "imu": {"calibrated": False, "fwd": 0, "cal": "idle", "cal_t": 0.0, "detect": "idle", "detect_t": 0.0},
@@ -175,10 +184,13 @@ def imu_payload():
     t = now - START_TIME
     lon0 = 0.9 * math.sin(t * 0.9) + 0.25 * math.sin(t * 2.3)
     lat0 = 0.8 * math.sin(t * 1.3 + 1.0)
-    k = st["fwd"]  # поворот осей на 90 градусов на каждый вариант
-    lon, lat = [(lon0, lat0), (lat0, -lon0), (-lon0, -lat0), (-lat0, lon0)][k]
+    # Плата стоит так, что сила тяжести вдоль оси Y (g0 = 0,1,0); горизонтальны X и Z. Физическое ускорение
+    # (dx, dz) не зависит от выбранного варианта, от него зависят только lon и lat (как в imu_math.c).
+    dx, dz = lon0, lat0
+    k = st["fwd"]
+    lon, lat = [(dx, dz), (-dx, -dz), (dz, -dx), (-dz, dx)][k]
     return {"ok": True, "calibrated": st["calibrated"], "fwd": st["fwd"], "cal": st["cal"], "detect": st["detect"],
-            "raw": [round(lat, 3), round(1 + 0.02 * math.sin(t), 3), round(lon, 3)],
+            "raw": [round(dx, 3), round(1 + 0.02 * math.sin(t), 3), round(dz, 3)], "g0": [0, 1, 0],
             "lon": round(lon, 3), "lat": round(lat, 3), "vert": round(0.05 * math.sin(t * 5), 3),
             "tot": round(math.hypot(lon, lat), 3)}
 
@@ -403,7 +415,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if path == "/api/can":
                 return self.send_json(can_status_payload())
             if path == "/api/can/map":
-                body = state["can_map"].encode("utf-8")
+                body = (state["can_map"] if state["can_map"] is not None else load_default_can_map()).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -560,6 +572,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not can_map_is_valid(text):
                     return self.send_text(400, "Invalid CAN map")
                 state["can_map"] = text
+                return self.send_json({"status": "success"})
+            if path == "/api/can/map/reset":
+                if not check_auth(self):
+                    return
+                state["can_map"] = None
                 return self.send_json({"status": "success"})
             if path == "/api/media/delete":
                 if not check_auth(self):

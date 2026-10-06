@@ -686,6 +686,14 @@
                                                             </select>
                                                         </div>
                                                     </template>
+                                                    <template x-if="widget.type === 'value'">
+                                                        <div class="col-6 col-md-3">
+                                                            <label class="form-label small" x-text="t('ed_w_div')"></label>
+                                                            <input type="number" min="0.001" step="any" class="form-control form-control-sm"
+                                                                :value="widget.div" @input="numberInput(widget, 'div', $event)">
+                                                            <div class="form-text" x-text="t('ed_w_div_hint')"></div>
+                                                        </div>
+                                                    </template>
 
                                                     <template x-if="widget.type === 'indicator'">
                                                         <div class="col-12">

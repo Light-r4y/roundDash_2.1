@@ -155,6 +155,10 @@
                                         x-text="t('can_add')"></span></button>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" @click="reloadMap()"><i
                                         class="fas fa-rotate me-1"></i><span x-text="t('ed_reload')"></span></button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    :disabled="busy || controlsLocked()" @click="resetMapPreset()"
+                                    :title="t('can_preset_hint')"><i class="fas fa-car-battery me-1"></i><span
+                                        x-text="t('can_preset')"></span></button>
                                 <button type="button" class="btn btn-sm btn-accent"
                                     :disabled="busy || mapInvalid || controlsLocked()" @click="applyMap()"><i
                                         class="fas fa-check me-1"></i><span x-text="t('can_apply')"></span></button>
@@ -206,8 +210,8 @@
                                             <label class="form-label small" x-text="t('can_order')"></label>
                                             <select class="form-select form-select-sm" x-model="e.order"
                                                 @change="mapChanged()">
-                                                <option value="intel" :selected="e.order === 'intel'">Intel (@1)</option>
-                                                <option value="motorola" :selected="e.order === 'motorola'">Motorola (@0)
+                                                <option value="intel" :selected="e.order === 'intel'">Intel (@1, LSB)</option>
+                                                <option value="motorola" :selected="e.order === 'motorola'">Motorola (@0, MSB)
                                                 </option>
                                             </select>
                                         </div>
@@ -288,7 +292,7 @@
                                                             x-text="b"></span>
                                                     </template>
                                                 </td>
-                                                <td class="text-end" x-text="f.rate + ' Hz'"></td>
+                                                <td class="text-end" x-text="periodText(f)"></td>
                                                 <td class="text-end" x-text="f.count"></td>
                                             </tr>
                                         </template>

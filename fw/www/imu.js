@@ -59,6 +59,41 @@ function imuPage() {
         get sensorOk() { return !!(this.s && this.s.ok); },
         fmt(v) { return v == null ? '' : (v >= 0 ? '+' : '') + Number(v).toFixed(2); },
 
+        // ---- варианты "вперёд" ----
+        // Те же четыре горизонтальных направления, что считает плата (imu_math.c, roundGauge_imu_basis):
+        // плюс и минус двух осей датчика с наибольшей горизонтальной проекцией. Живая проекция
+        // ускорения (без силы тяжести) на каждое - чтобы выбрать вариант толчком платы.
+        fwdVariants() {
+            const s = this.s;
+            const g0 = s && Array.isArray(s.g0) ? s.g0 : [0, 0, 1];
+            const n = Math.hypot(g0[0], g0[1], g0[2]);
+            const u = n < 0.5 ? [0, 0, 1] : g0.map(v => v / n);
+            const h = [0, 1, 2].map(i => [0, 1, 2].map(k => (k === i ? 1 : 0) - u[i] * u[k]));
+            const len = h.map(v => Math.hypot(v[0], v[1], v[2]));
+            let worst = 0;
+            for (let i = 1; i < 3; i++) if (len[i] < len[worst]) worst = i;
+            const ax = [0, 1, 2].filter(i => i !== worst);
+            const cand = [], names = [];
+            for (const a of ax) {
+                const c = h[a].map(v => v / len[a]);
+                cand.push(c, c.map(v => -v));
+                names.push('+' + 'XYZ'[a], '\u2212' + 'XYZ'[a]);
+            }
+            const raw = s && Array.isArray(s.raw) ? s.raw : [0, 0, 0];
+            const d = [raw[0] - g0[0], raw[1] - g0[1], raw[2] - g0[2]];
+            const p = cand.map(c => c[0] * d[0] + c[1] * d[1] + c[2] * d[2]);
+            let best = 0;
+            for (let i = 1; i < 4; i++) if (p[i] > p[best]) best = i;
+            return [0, 1, 2, 3].map(i => {
+                const selected = !!s && s.fwd === i;
+                const hot = i === best && p[i] > 0.08;
+                return {
+                    n: i, axis: names[i], pct: Math.max(0, Math.min(100, p[i] / 0.4 * 100)), hot, selected,
+                    cls: selected ? 'btn-accent' : (hot ? 'btn-warning' : 'btn-outline-secondary'),
+                };
+            });
+        },
+
         // ---- состояние калибровки и направления ----
         calText() {
             const s = this.s;

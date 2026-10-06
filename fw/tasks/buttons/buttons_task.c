@@ -4,11 +4,34 @@
 #include "webcfg_task.h"
 #include "ui_task.h"
 #include "auth.h"
+#include "settings.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 
 static const char *TAG = "BUTTONS";
+
+// Следующий уровень яркости: первый из списка, который меньше текущего; ниже самого низкого - снова самый
+// высокий. Текущее значение может быть любым (например, с ползунка в вебе). Сохраняется в настройках,
+// как и ползунок, поэтому после включения яркость прежняя.
+static void cycle_brightness(void)
+{
+    static const uint8_t steps[] = RG_BTN2_BRIGHTNESS_STEPS;
+    roundGauge_display_settings_t d;
+    roundGauge_settings_get_display(&d);
+    uint8_t next = steps[0];
+    for (size_t i = 0; i < sizeof(steps); i++) {
+        if (steps[i] < d.brightness) {
+            next = steps[i];
+            break;
+        }
+    }
+    d.brightness = next;
+    if (roundGauge_settings_set_display(&d) == ESP_OK) {
+        roundGauge_board_backlight_set(next);
+        ESP_LOGI(TAG, "Brightness %u%%", (unsigned)next);
+    }
+}
 
 static void buttons_task(void *arg)
 {
@@ -62,11 +85,11 @@ static void buttons_task(void *arg)
             reset_fired = false;
         }
 
-        // Кнопка 2: нажатие (после подавления дребезга) переключает экран.
-        // Срабатывает один раз за нажатие, пока кнопку держат - повтора нет.
+        // Кнопка 2: нажатие (после подавления дребезга) переключает яркость по кругу
+        // (RG_BTN2_BRIGHTNESS_STEPS). Срабатывает один раз за нажатие, пока кнопку держат - повтора нет.
         if (roundGauge_board_btn_pressed(1)) {
             if (btn2_down_ticks < RG_BTN_DEBOUNCE_TICKS && ++btn2_down_ticks == RG_BTN_DEBOUNCE_TICKS) {
-                roundGauge_ui_switch_screen(+1);
+                cycle_brightness();
             }
         } else {
             btn2_down_ticks = 0;

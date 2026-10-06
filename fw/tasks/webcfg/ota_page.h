@@ -1,9 +1,7 @@
 // ota_page.h
 // Страница /ota: обновление прошивки и раздела www из браузера.
-// Перенесена из wifi-serv (src/wifi/update.h): заменены бренд, переменные темы
-// (префикс pdm -> rg) и эндпоинты (/api/spiffs/update -> /api/www/update,
-// /api/keys -> /api/status). Страница вшита в прошивку, а не лежит в www: она
-// должна работать, даже когда раздел www пуст или перезаписывается.
+// Страница вшита в прошивку, а не лежит в www: она работает и при пустом разделе www.
+// Эндпоинты: /api/ota/update, /api/www/update, /api/status.
 #pragma once
 
 const char RG_OTA_PAGE_HTML[] = R"rawliteral(

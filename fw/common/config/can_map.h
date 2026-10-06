@@ -64,6 +64,9 @@ void roundGauge_can_map_copy(roundGauge_can_map_t *out);
 // (текущая таблица остаётся). Пустой "map" допустим - привязки сбрасываются.
 esp_err_t roundGauge_can_map_apply_json(const char *json);
 
+// Сбросить таблицу к пресету rusEFI (can_map_default.h): стирает сохранённую в NVS и делает текущей встроенную.
+esp_err_t roundGauge_can_map_reset(void);
+
 // JSON текущей таблицы в куче (освободить free()); NULL при нехватке памяти.
 char *roundGauge_can_map_json_dup(void);
 

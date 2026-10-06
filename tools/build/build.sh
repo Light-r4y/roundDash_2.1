@@ -84,7 +84,14 @@ sed -e "s/{{VERSION}}/${VERSION}/g" -e "s/{{BUILD_DATE}}/${BUILD_DATE}/g" \
     -e "s/{{AP_SSID_PREFIX}}/${AP_SSID_PREFIX}/g" -e "s/{{AP_PASSWORD}}/${AP_PASSWORD}/g" \
     "$SCRIPT_DIR/release_readme_template.txt" > "$RELEASE_DIR/README.txt"
 
+# Портативный набор для прошивки на столе: esptool.exe, flash_all/update_firmware (.bat и .sh),
+# и zip всей папки рядом с ней - см. package_release.py.
+echo "=== package_release ==="
+PYTHON="$(command -v python3 || command -v python)"
+"$PYTHON" "$SCRIPT_DIR/package_release.py" "$RELEASE_DIR" "$VERSION"
+
 echo
 echo "=== Done ==="
 echo "Version:     ${VERSION}"
 echo "Release dir: ${RELEASE_DIR}"
+echo "Release zip: ${RELEASE_DIR}.zip"
