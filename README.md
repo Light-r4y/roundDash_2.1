@@ -178,6 +178,9 @@ python tools/webtest/mock_server.py
 | Init-последовательность и тайминги ST7701 от Waveshare из [ESP32_Display_Panel](https://github.com/esp-arduino-libs/ESP32_Display_Panel) | `fw/common/board/st7701_init.h` | Apache-2.0 |
 | [Alpine.js](https://alpinejs.dev) 3.14.1 | `fw/www/alpine.min.js` | MIT |
 | [Bootstrap](https://getbootstrap.com) 5.3.0 | `fw/www/bootstrap.min.css` | MIT |
+| Segment7 (Cedders, 2014), в виде LVGL-шрифтов 40/72/120 px | `fw/media/seg7_*.fnt` | SIL OFL 1.1 |
+| Orbitron, Michroma, Russo One, Jura ([Google Fonts](https://fonts.google.com)), в виде LVGL-шрифтов | `fw/media/orbitron_*.fnt`, `michroma_*.fnt`, `russo_*.fnt`, `jura_*.fnt` | SIL OFL 1.1 |
+| Black Ops One (Black-Ops Project Authors), изменён: скос контуров 24°, в виде LVGL-шрифтов | `fw/media/blackops_*.fnt` | SIL OFL 1.1 |
 | [Font Awesome Free](https://fontawesome.com) 6.4.0 | `fw/www/fontawesome/` | иконки CC BY 4.0, шрифт SIL OFL 1.1, код MIT |
 
 LVGL (MIT) и компоненты Espressif (Apache-2.0) скачиваются при сборке и в

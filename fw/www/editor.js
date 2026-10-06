@@ -202,8 +202,9 @@ function editorPage() {
             try { this.sections = JSON.parse(localStorage.getItem(RG_SEC_KEY) || '{}') || {}; } catch (e) { this.sections = {}; }
             this.checkAuthStatus();
             this.loadAll();
+            // Ошибка отрисовки не должна останавливать цикл: иначе предпросмотр замирает до перезагрузки.
             const loop = (t) => {
-                this.frame(t);
+                try { this.frame(t); } catch (e) { console.error('preview', e); }
                 requestAnimationFrame(loop);
             };
             requestAnimationFrame(loop);

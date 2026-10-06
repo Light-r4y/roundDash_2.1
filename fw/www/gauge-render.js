@@ -34,7 +34,14 @@ const RgGauge = (() => {
                  decimals: w.decimals >= 0 ? w.decimals : d.decimals };
     }
 
-    const fontPx = (name) => (name === '14' ? 14 : name === '48' ? 48 : 28);
+    // Размер шрифта в предпросмотре: встроенные 14/28/48; у своего .fnt - число перед расширением
+    // в имени (seg7_120.fnt -> 120), иначе 28. Шрифт файла браузер не знает, рисуется запасным.
+    const fontPx = (name) => {
+        if (name === '14') return 14;
+        if (name === '48') return 48;
+        const m = /_(\d{1,3})\.fnt$/i.exec(name || '');
+        return m && +m[1] >= 8 && +m[1] <= 200 ? +m[1] : 28;
+    };
 
     function labelText(sc, sig, f) {
         const x = (sig.min + (sig.max - sig.min) * f) / (sc.label_div || 1);
@@ -111,7 +118,7 @@ const RgGauge = (() => {
     }
 
     function arcShape(ctx, cx, cy, diameter, width, angle, rotation, bg, fg, f) {
-        const a0 = rotation * RAD, span = angle * RAD, r = diameter / 2 - width / 2;
+        const a0 = rotation * RAD, span = angle * RAD, r = Math.max(0, diameter / 2 - width / 2);
         ctx.lineWidth = width;
         ctx.lineCap = 'butt';
         ctx.beginPath();
@@ -236,7 +243,7 @@ const RgGauge = (() => {
     }
 
     function widgetText(w, sig, v) {
-        return w.type === 'text' ? w.text : (v == null ? '--' : v.toFixed(sig.decimals));
+        return w.type === 'text' ? w.text : (v == null ? '--' : v.toFixed(Math.min(Math.max(sig.decimals | 0, 0), 10)));
     }
 
     // Рамка виджета на экране: [x, y, w, h] в пикселях canvas.
@@ -288,7 +295,7 @@ const RgGauge = (() => {
                     ctx.drawImage(img, cx - img.width / 2, cy - img.height / 2);
                 } else {
                     ctx.beginPath();
-                    ctx.arc(cx, cy, w.w / 2, 0, Math.PI * 2);
+                    ctx.arc(cx, cy, Math.max(0, w.w / 2), 0, Math.PI * 2);
                     ctx.fillStyle = w.color;
                     ctx.fill();
                 }
@@ -299,7 +306,7 @@ const RgGauge = (() => {
                 ctx.strokeStyle = GREY;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.arc(cx, cy, (img ? img.width : w.w) / 2, 0, Math.PI * 2);
+                ctx.arc(cx, cy, Math.max(0, (img ? img.width : w.w) / 2), 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.setLineDash([]);
             }
@@ -345,7 +352,15 @@ const RgGauge = (() => {
         else if (sc.type === 'ring') drawRing(ctx, sc, sig, v);
         else if (sc.type === 'gmeter') drawGmeter(ctx, sc, values, extra);
 
-        sc.widgets.forEach((w) => drawWidget(ctx, layout, sc, w, values, imgs, editor));
+        // Один неудачный виджет (полуправленное поле) не должен прятать остальные.
+        sc.widgets.forEach((w) => {
+            try {
+                drawWidget(ctx, layout, sc, w, values, imgs, editor);
+            } catch (e) {
+                console.warn('widget preview', w.type, e);
+                ctx.setLineDash([]);
+            }
+        });
 
         if (editor && sel >= 0 && sc.widgets[sel]) {
             const w = sc.widgets[sel];
