@@ -144,7 +144,7 @@ const RgGauge = (() => {
             zone ? zone.color : sc.color, v == null ? 0 : frac(sig.min, sig.max, v));
     }
 
-    // ---- д-метр: точка на круговой сетке (ui_screens.c, build_gmeter / update_gmeter) ----
+    // ---- G-сенсор: точка на круговой сетке (ui_screens.c, build_gmeter / update_gmeter) ----
     const GM_RADIUS = 180, GM_DOT_D = 28, GM_CLAMP = 1.05;
 
     // Положение точки по значениям двух сигналов: sx/sy в g (вправо и вверх на экране), px/py -
@@ -160,7 +160,7 @@ const RgGauge = (() => {
         return { sx, sy, px: Math.round(sx * scale), py: -Math.round(sy * scale) };
     }
 
-    // Шлейф и максимумы д-метра, как в ui_screens.c: точка записывается каждые 50 мс, максимум
+    // Шлейф и максимумы G-сенсора, как в ui_screens.c: точка записывается каждые 50 мс, максимум
     // держится 8 с и потом спадает на 0,25 g/с. st - { sc, hist, peaks, peakMs, trailMs, lastMs }
     // (пустой объект подходит), его ведёт вызывающий и отдаёт в draw() как extra.
     function gmeterTrack(st, sc, values, now) {
@@ -338,7 +338,7 @@ const RgGauge = (() => {
     // ---- экран целиком ----
     // values - имя сигнала -> число (нет ключа - нет данных); imgs - имя -> canvas;
     // sel - номер выделенного виджета (рамка) или -1; editor - рисовать подсказки;
-    // extra - шлейф и максимумы д-метра (их ведёт вызывающий).
+    // extra - шлейф и максимумы G-сенсора (их ведёт вызывающий).
     function draw(canvas, layout, sc, values, imgs, sel, editor, extra) {
         const ctx = canvas.getContext('2d');
         ctx.save();

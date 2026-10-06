@@ -7,6 +7,7 @@ Files
   flash_all.bat / flash_all.sh           full flash of a board (see below)
   update_firmware.bat / update_firmware.sh  update the firmware and web interface only
   esptool.exe, esptool_LICENSE.txt       portable Windows flasher (esptool by Espressif, GPL-2.0)
+  LICENSE.txt                            roundGauge license (MIT)
   roundGauge_firmware_v{{VERSION}}.bin   application (ota_0)
   roundGauge_www_v{{VERSION}}.bin        web interface (www partition)
   roundGauge_media_v{{VERSION}}.bin      dashboard images and fonts (media partition)

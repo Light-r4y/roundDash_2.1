@@ -9,6 +9,7 @@ flash_args и README.txt:
 Что делает:
   * кладёт в папку esptool.exe (официальная сборка с GitHub, скачивается один раз в
     tools/build/.cache и дальше берётся оттуда) и текст его лицензии;
+  * кладёт лицензию проекта (LICENSE из корня репозитория) как LICENSE.txt;
   * пишет скрипты прошивки по flash_args: flash_all.bat / flash_all.sh (всё: загрузчик,
     таблица разделов, приложение, web, media) и update_firmware.bat / update_firmware.sh
     (только приложение и web - картинки и шрифты, загруженные в media, остаются);
@@ -30,6 +31,7 @@ BAUD = 460800
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, ".cache")
+PROJECT_LICENSE = os.path.normpath(os.path.join(HERE, "..", "..", "LICENSE"))
 
 
 def log(msg):
@@ -184,6 +186,9 @@ def main():
     exe, lic = ensure_esptool()
     shutil.copy2(exe, os.path.join(rel_dir, "esptool.exe"))
     shutil.copy2(lic, os.path.join(rel_dir, "esptool_LICENSE.txt"))
+    if not os.path.isfile(PROJECT_LICENSE):
+        raise SystemExit("project LICENSE not found: " + PROJECT_LICENSE)
+    shutil.copy2(PROJECT_LICENSE, os.path.join(rel_dir, "LICENSE.txt"))
     opts, entries = read_flash_args(os.path.join(rel_dir, "flash_args"))
     scripts = write_scripts(rel_dir, version, opts, entries)
     out = make_zip(rel_dir, version)

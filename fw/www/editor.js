@@ -18,7 +18,7 @@ const RG_SCREEN_DEFAULTS = {
     tick_major_len: 22, tick_minor_len: 10, tick_major_width: 4, tick_minor_width: 2, label_gap: 15, label_font: '28',
     signal2: 'g_lat', g_range: 1.5, g_step: 0.5, trail: 8, peaks: true, felt: true,
 };
-// Отличия по типам - как в parse_screen (layout.c): у д-метра цвет - точка, text_color - сетка.
+// Отличия по типам - как в parse_screen (layout.c): у G-сенсора цвет - точка, text_color - сетка.
 const RG_SCREEN_TYPE_DEFAULTS = {
     gmeter: { color: '#00c0ff', text_color: '#505050' },
 };
@@ -63,7 +63,7 @@ let rgPivotGeom = null; // масштаб и смещение картинки �
 const rgPending = new Set(); // имена, которые уже качаются
 let rgValues = {};           // значения сигналов для предпросмотра
 
-// Шлейф и максимумы д-метра в предпросмотре ведёт RgGauge.gmeterTrack.
+// Шлейф и максимумы G-сенсора в предпросмотре ведёт RgGauge.gmeterTrack.
 const rgGm = {};
 
 const rgWidgetDefault = (type, key) => (RG_WIDGET_TYPE_DEFAULTS[type] && key in RG_WIDGET_TYPE_DEFAULTS[type])
@@ -487,7 +487,7 @@ function editorPage() {
         },
 
         // ---- экраны ----
-        // Д-метр: сигналы g_* заводятся, если их ещё нет (до лимита), и четыре числа по умолчанию.
+        // G-сенсор: сигналы g_* заводятся, если их ещё нет (до лимита), и четыре числа по умолчанию.
         newGmeterScreen() {
             const defs = [['g_lon', 'G LON', -1.5, 1.5], ['g_lat', 'G LAT', -1.5, 1.5], ['g_vert', 'G VERT', -1, 1],
                           ['g_tot', 'G', 0, 2]];

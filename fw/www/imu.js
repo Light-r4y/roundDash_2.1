@@ -3,7 +3,7 @@
 // перегрузок на плате.
 const RG_IMU_POLL_MS = 120;
 
-// Экран-образец для отрисовки: как встроенный д-метр, без дополнительных виджетов.
+// Экран-образец для отрисовки: как встроенный G-сенсор, без дополнительных виджетов.
 const RG_IMU_SCREEN = {
     type: 'gmeter', signal: 'g_lon', signal2: 'g_lat', g_range: 1.5, g_step: 0.5, trail: 8, peaks: true,
     felt: true, color: '#00c0ff', text_color: '#505050', bg_color: '#000000', bg_image: '',

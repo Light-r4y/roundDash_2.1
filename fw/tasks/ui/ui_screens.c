@@ -56,7 +56,7 @@ typedef struct {
     lv_point_precise_t marker_pts[RG_LAYOUT_MAX_MARKERS][2]; // линии держат указатель на точки
     ui_widget_t w[RG_LAYOUT_MAX_WIDGETS];
     int w_count;
-    // Д-метр (gmeter): точка, шлейф и метки максимумов.
+    // G-сенсор (gmeter): точка, шлейф и метки максимумов.
     sig_t sig2;
     lv_obj_t *gm_dot, *gm_trail[RG_LAYOUT_MAX_TRAIL], *gm_peak[4], *gm_peak_lbl[4];
     int gm_hx[RG_LAYOUT_MAX_TRAIL + 1], gm_hy[RG_LAYOUT_MAX_TRAIL + 1]; // история точки: [0] - текущая
@@ -321,7 +321,7 @@ static void build_ring(ui_screen_t *u)
 }
 
 // ------------------------------------------------------------------
-// Д-метр: перегрузки точкой на круговой сетке
+// G-сенсор: перегрузки точкой на круговой сетке
 // ------------------------------------------------------------------
 #define GM_RADIUS 180          // радиус внешнего кольца, px
 #define GM_DOT_D 28
