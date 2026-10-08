@@ -28,6 +28,7 @@ connector and swipes on the screen.
 | 🔤 | Base set in `fw/media`: 18 fonts (Orbitron, Michroma, Russo One and Jura with Cyrillic, Black Ops One Slant, Segment7), 4 backgrounds (carbon, HUD grid, brushed metal, perforation), 3 needles; the built-in layout has 5 screens, including AFR | ✅ works |
 | 📐 | G-meter: QMI8658 accelerometer, g-forces as a dot on a round grid with a trail and maxima (as in racing cars); gravity calibration at any board tilt, signals `g_lon`/`g_lat`/`g_vert`/`g_tot` are available to any widget | ✅ works on the board (axis and calibration accuracy — 🧪) |
 | 👆 | Swipe left/right to switch screens; a build option for a screen without touch (`RG_HAS_TOUCH=0`) | ✅ works |
+| 🔔 | The board buzzer: modes "off / alerts / alerts + clicks", alert rules in the web interface (signal, condition, threshold, pattern: a series of beeps or continuous), silenced by any button | 🧪 written, not tested on the board |
 | 🔘 | Button 1: short press — next screen, hold — access point; button 2 — brightness cycle (100 / 60 / 30 / 10 %) | ✅ works |
 | 🚌 | CAN (TWAI) reception, a ready-made rusEFI mapping preset out of the box, DBC-style signal-to-frame mapping, data timeouts, web sniffer, "demo" mode with a generator | 🧪 written, not tested on a bus |
 | 📶 | Wi-Fi access point on a long press of button 1; the screen shows a card with the network name, password and address, then an icon with the client count; the name and password are set in the web interface | ✅ access point, 🧪 card |
@@ -139,7 +140,7 @@ them alive without a bus:
 
 | Action | Result |
 |---|---|
-| Button 1, short press | next screen |
+| Button 1, short press | next screen (and silence a sound alert) |
 | Button 1, hold 2 s | Wi-Fi access point |
 | Button 1, hold 10 s | clear a forgotten settings password (a warning is shown 3 s before) |
 | Button 2 | brightness cycle: 100 → 60 → 30 → 10 → 100 % (remembered) |

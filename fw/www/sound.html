@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Sound</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/sound.js"></script>
+</head>
+
+<body>
+    <div x-data="soundPage()" x-effect="document.title = t('title_sound')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-3 mb-5" style="max-width:960px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <!-- Режим звука -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-3"><i class="fas fa-volume-high me-2"></i><span x-text="t('sound_title')"></span></h6>
+                    <div class="row g-2">
+                        <template x-for="m in modes" :key="m">
+                            <div class="col-12 col-md-4">
+                                <button type="button" class="btn btn-sm w-100 text-start lh-sm"
+                                    :class="mode === m ? 'btn-accent' : 'btn-outline-secondary'"
+                                    :disabled="busy || controlsLocked()" @click="setMode(m)">
+                                    <span class="fw-semibold" x-text="t('snd_mode_' + m)"></span><br>
+                                    <small x-text="t('snd_mode_' + m + '_hint')"></small>
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="busy || controlsLocked()"
+                            @click="testBeep()">
+                            <i class="fas fa-bell me-1"></i><span x-text="t('sound_test')"></span>
+                        </button>
+                        <span class="small" :class="alarmNow() ? 'text-warning' : 'text-muted'" x-text="statusText()"></span>
+                    </div>
+                    <div class="form-text mt-2" x-text="t('sound_hint')"></div>
+                </div>
+            </div>
+
+            <!-- Правила тревог -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <h6 class="mb-0 me-auto"><i class="fas fa-triangle-exclamation me-2"></i><span
+                                x-text="t('sound_rules')"></span>
+                            <span class="small text-muted" x-text="'(' + rules.length + '/' + maxRules + ')'"></span></h6>
+                        <span class="badge bg-warning text-dark" x-show="dirty" x-text="t('ed_unsaved')"></span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            :disabled="rules.length >= maxRules" @click="addRule()"><i class="fas fa-plus me-1"></i><span
+                                x-text="t('can_add')"></span></button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @click="loadRules()"><i
+                                class="fas fa-rotate me-1"></i><span x-text="t('ed_reload')"></span></button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            :disabled="busy || controlsLocked()" @click="resetRules()"><i
+                                class="fas fa-rotate-left me-1"></i><span x-text="t('sound_defaults')"></span></button>
+                        <button type="button" class="btn btn-sm btn-accent"
+                            :disabled="busy || controlsLocked() || rulesInvalid" @click="applyRules()"><i
+                                class="fas fa-check me-1"></i><span x-text="t('can_apply')"></span></button>
+                    </div>
+
+                    <template x-for="(r, i) in rules" :key="i">
+                        <div class="border rounded p-2 mb-2" style="border-color:var(--rg-border) !important">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label small" x-text="t('ed_signal')"></label>
+                                    <select class="form-select form-select-sm" x-model="r.signal" @change="changed()">
+                                        <template x-if="r.signal && !signals.includes(r.signal)">
+                                            <option :value="r.signal" selected x-text="r.signal + ' \u26a0'"></option>
+                                        </template>
+                                        <template x-if="!r.signal">
+                                            <option value="" selected>-</option>
+                                        </template>
+                                        <template x-for="n in signals" :key="n">
+                                            <option :value="n" x-text="n" :selected="n === r.signal"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label small" x-text="t('sound_op')"></label>
+                                    <select class="form-select form-select-sm" x-model="r.op" @change="changed()">
+                                        <option value=">" :selected="r.op === '>'" x-text="t('sound_op_gt')"></option>
+                                        <option value="<" :selected="r.op === '<'" x-text="t('sound_op_lt')"></option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label small" x-text="t('sound_value')"></label>
+                                    <input type="number" step="any" class="form-control form-control-sm"
+                                        :class="isNaN(r.value) ? 'map-err' : ''" :value="r.value"
+                                        @input="num(r, 'value', $event)">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label small" x-text="t('sound_hyst')"></label>
+                                    <input type="number" step="any" min="0" class="form-control form-control-sm"
+                                        :value="r.hyst" @input="num(r, 'hyst', $event)">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label small" x-text="t('sound_pattern')"></label>
+                                    <select class="form-select form-select-sm" x-model="r.pattern" @change="changed()">
+                                        <option value="beeps" :selected="r.pattern === 'beeps'" x-text="t('sound_pat_beeps')">
+                                        </option>
+                                        <option value="continuous" :selected="r.pattern === 'continuous'"
+                                            x-text="t('sound_pat_cont')"></option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-1 d-flex align-items-end">
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" :id="'rule_en' + i"
+                                            x-model="r.enabled" @change="changed()" :title="t('sound_enabled')">
+                                    </div>
+                                </div>
+                                <template x-if="r.pattern === 'beeps'">
+                                    <div class="col-12">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-6 col-md-2">
+                                                <label class="form-label small" x-text="t('sound_count')"></label>
+                                                <input type="number" min="1" max="9" step="1" class="form-control form-control-sm"
+                                                    :value="r.count" @input="num(r, 'count', $event)">
+                                            </div>
+                                            <div class="col-6 col-md-2">
+                                                <label class="form-label small" x-text="t('sound_on')"></label>
+                                                <input type="number" min="20" max="2000" step="10"
+                                                    class="form-control form-control-sm" :value="r.on"
+                                                    @input="num(r, 'on', $event)">
+                                            </div>
+                                            <div class="col-6 col-md-2">
+                                                <label class="form-label small" x-text="t('sound_off')"></label>
+                                                <input type="number" min="20" max="2000" step="10"
+                                                    class="form-control form-control-sm" :value="r.off"
+                                                    @input="num(r, 'off', $event)">
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <label class="form-label small" x-text="t('sound_repeat')"></label>
+                                                <input type="number" min="0" max="3600" step="1"
+                                                    class="form-control form-control-sm" :value="r.repeat"
+                                                    @input="num(r, 'repeat', $event)">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div class="col-12 d-flex align-items-center gap-2">
+                                    <span class="badge" :class="ruleBadgeClass(i)" x-show="ruleState(i)"
+                                        x-text="ruleState(i)"></span>
+                                    <span class="small text-muted me-auto" x-text="ruleSummary(r)"></span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary px-3"
+                                        @click="removeRule(i)"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div class="small text-muted" x-show="!rules.length" x-text="t('sound_empty')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

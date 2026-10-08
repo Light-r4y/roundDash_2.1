@@ -80,7 +80,7 @@ extern "C" {
 #define RG_EXIO_IMU_INT2 4  /* EXIO5 */
 #define RG_EXIO_IMU_INT1 5  /* EXIO6 */
 #define RG_EXIO_RTC_INT 6   /* EXIO7 */
-#define RG_EXIO_BUZZER 7    /* EXIO8 */
+#define RG_EXIO_BUZZER 7    /* EXIO8, зуммер (roundGauge_board_buzzer_set) */
 
 // ------------------------------------------------------------------
 // Экран ST7701S, RGB565, 480×480
@@ -135,6 +135,10 @@ i2c_master_bus_handle_t roundGauge_board_i2c(void);
 
 // Яркость подсветки, 0-100 %.
 esp_err_t roundGauge_board_backlight_set(uint8_t pct);
+
+// Зуммер на выводе EXIO8 расширителя TCA9554: включить или выключить (простое включение, тонов нет;
+// звучит ли непрерывно или нужны импульсы - зависит от зуммера: активный пищит сам).
+esp_err_t roundGauge_board_buzzer_set(bool on);
 
 #ifdef __cplusplus
 }

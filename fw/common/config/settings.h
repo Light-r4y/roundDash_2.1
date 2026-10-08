@@ -11,6 +11,7 @@
 //   "version": 1,
 //   "can":     { "bitrate": 500000, "mode": "listen_only", "demo": false },
 //   "display": { "brightness": 100 },
+//   "sound":   { "mode": "off" },
 //   "imu":     { "calibrated": false, "g0": [0, 0, 1], "fwd": 0 },
 //   "wifi_ap": { "ssid": "", "password": "roundgauge" }
 // }
@@ -41,6 +42,16 @@ typedef struct {
     uint8_t brightness; // подсветка, % (RG_LCD_BL_MIN_PCT..100)
 } roundGauge_display_settings_t;
 
+typedef enum {
+    RG_SOUND_OFF = 0,       // зуммер молчит
+    RG_SOUND_ALERTS,        // только тревоги по правилам (alerts.h)
+    RG_SOUND_ALERTS_CLICKS, // тревоги и короткий писк при нажатии кнопок
+} roundGauge_sound_mode_t;
+
+typedef struct {
+    roundGauge_sound_mode_t mode;
+} roundGauge_sound_settings_t;
+
 typedef struct {
     bool calibrated;
     float g0[3];  // сила тяжести в осях платы при калибровке, g - направлена "вверх"
@@ -51,6 +62,7 @@ typedef struct {
     uint32_t version;
     roundGauge_can_settings_t can;
     roundGauge_display_settings_t display;
+    roundGauge_sound_settings_t sound;
     roundGauge_imu_settings_t imu;
     roundGauge_wifi_ap_settings_t wifi_ap;
 } roundGauge_settings_t;
@@ -82,6 +94,10 @@ esp_err_t roundGauge_settings_set_wifi(const roundGauge_wifi_ap_settings_t *w);
 
 void roundGauge_settings_get_display(roundGauge_display_settings_t *out);
 esp_err_t roundGauge_settings_set_display(const roundGauge_display_settings_t *d);
+
+// Режим звука: применяется сразу.
+void roundGauge_settings_get_sound(roundGauge_sound_settings_t *out);
+esp_err_t roundGauge_settings_set_sound(const roundGauge_sound_settings_t *s);
 
 // Заполняет структуру значениями по умолчанию.
 void roundGauge_settings_defaults(roundGauge_settings_t *out);

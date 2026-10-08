@@ -5,6 +5,7 @@
 #include "ui_task.h"
 #include "auth.h"
 #include "settings.h"
+#include "sound_task.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -51,6 +52,9 @@ static void buttons_task(void *arg)
         // нажатие; короткое (отпущена раньше) переключает экран. Эта кнопка работает и
         // при питании по Type-C, в отличие от кнопки 2 (GPIO44 занят USB-UART).
         if (roundGauge_board_btn_pressed(0)) {
+            if (btn1_held_ms == 0) {
+                roundGauge_sound_user_input(); // заглушить тревогу, клик
+            }
             if (btn1_held_ms < RG_AUTH_RESET_HOLD_MS) {
                 btn1_held_ms += RG_BUTTONS_TICK_MS;
             }
@@ -89,6 +93,7 @@ static void buttons_task(void *arg)
         // (RG_BTN2_BRIGHTNESS_STEPS). Срабатывает один раз за нажатие, пока кнопку держат - повтора нет.
         if (roundGauge_board_btn_pressed(1)) {
             if (btn2_down_ticks < RG_BTN_DEBOUNCE_TICKS && ++btn2_down_ticks == RG_BTN_DEBOUNCE_TICKS) {
+                roundGauge_sound_user_input();
                 cycle_brightness();
             }
         } else {

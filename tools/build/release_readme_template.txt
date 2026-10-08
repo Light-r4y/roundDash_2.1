@@ -48,6 +48,7 @@ Pages
   /media.html   images and fonts on the board
   /can.html     CAN speed and mode, signal mapping table, frame sniffer
   /imu.html     accelerometer: live g-force dot, calibration, forward direction
+  /sound.html   buzzer: mode (off / alerts / alerts + clicks), alert rules, test beep
   /ota          firmware and web interface update
                 (roundGauge_firmware_*.bin and roundGauge_www_*.bin)
 
@@ -56,7 +57,7 @@ by a generator, which helps to tune the screens on the desk.
 
 Controls
 --------
-  Button 1, short press   next screen
+  Button 1, short press   next screen (any button press or swipe silences a sound alert)
   Button 1, hold 2 s      Wi-Fi access point
   Button 1, hold 10 s     clear a forgotten settings password (a warning shows 3 s before)
   Button 2                brightness cycle 100 / 60 / 30 / 10 % (does not work while powered over Type-C)

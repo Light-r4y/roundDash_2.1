@@ -3,6 +3,7 @@
 #include "conf.h"
 #include "board.h"
 #include "ui_task.h"
+#include "sound_task.h"
 #include "esp_lcd_touch.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -73,6 +74,7 @@ static void touch_task(void *arg)
                 } else if (abs(dx) >= RG_TOUCH_SWIPE_MIN_PX && 2 * abs(dx) >= 3 * abs(dy)) {
                     decided = true;
                     // Палец влево - следующий экран, вправо - предыдущий.
+                    roundGauge_sound_user_input();
                     roundGauge_ui_switch_screen(dx < 0 ? +1 : -1);
                 }
             }

@@ -16,6 +16,7 @@ function mainPage() {
         media: null,    // /api/media
         layout: null,   // сводка по /api/layout: { screens, signals }
         imu: null,      // /api/imu
+        sound: null,    // /api/sound
         brightness: null,
         brightTimer: null,
 
@@ -51,9 +52,10 @@ function mainPage() {
             }
             this.can = can;
             if (!once) return;
-            const [media, layout, display, imu] = await Promise.all([
+            const [media, layout, display, imu, sound] = await Promise.all([
                 this.getJson('/api/media'), this.getJson('/api/layout'), this.getJson('/api/display'),
-                this.getJson('/api/imu')]);
+                this.getJson('/api/imu'), this.getJson('/api/sound')]);
+            this.sound = sound;
             this.media = media;
             this.imu = imu;
             if (layout) {
@@ -70,6 +72,9 @@ function mainPage() {
         },
         subMedia() {
             return this.media ? this.t('tile_media').replace('{n}', this.media.files.length) : '';
+        },
+        subSound() {
+            return this.sound ? this.t('snd_mode_' + this.sound.mode) : '';
         },
         subImu() {
             if (!this.imu) return '';

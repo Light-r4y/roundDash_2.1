@@ -47,6 +47,7 @@ VERSION_FILE = os.path.join(ROOT, "fw", "version.txt")
 OTA_PAGE_H = os.path.join(ROOT, "fw", "tasks", "webcfg", "ota_page.h")
 LAYOUT_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "layout_default.h")
 CAN_MAP_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "can_map_default.h")
+ALERTS_DEFAULT_H = os.path.join(ROOT, "fw", "common", "config", "alerts_default.h")
 LAYOUT_JSON_MAX = 16384   # RG_LAYOUT_JSON_MAX
 UI_MAX_BG_IMAGES = 4      # RG_UI_MAX_BG_IMAGES
 MEDIA_MAX_FILE = 1000000  # RG_MEDIA_MAX_FILE
@@ -69,6 +70,28 @@ def load_default_layout():
     return "".join(parts).replace('\\"', '"')
 
 
+def load_default_alerts():
+    """Правила тревог по умолчанию из того же alerts_default.h, что компилируется в прошивку."""
+    with open(ALERTS_DEFAULT_H, encoding="utf-8") as f:
+        text = f.read()
+    pieces = re.findall(r'"((?:[^"\\]|\\.)*)"', text[text.index("RG_ALERTS_DEFAULT_JSON"):])
+    return "".join(pieces).replace('\\"', '"')
+
+
+def alerts_are_valid(text):
+    """Как roundGauge_alerts_apply_json: JSON разбирается, rules - массив, при непустом нужна хоть одна годная."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        return False
+    good = [r for r in rules[:8] if isinstance(r, dict) and isinstance(r.get("signal"), str) and r["signal"]
+            and isinstance(r.get("value"), (int, float)) and r.get("op", ">") in (">", "<")]
+    return not rules or bool(good)
+
+
 def load_default_can_map():
     """Пресет rusEFI из того же can_map_default.h, что компилируется в прошивку."""
     with open(CAN_MAP_DEFAULT_H, encoding="utf-8") as f:
@@ -86,6 +109,8 @@ state = {
     "layout": None,             # сохранённый layout (str); None - встроенный
     "media": {},                # имя -> байты, как раздел media на плате
     "can_cfg": {"bitrate": 500000, "mode": "listen_only", "demo": False},
+    "sound_mode": "off",
+    "sound_rules": None,       # сохранённые правила тревог (str); None - встроенные
     "can_map": None,  # сохранённая таблица привязок (str); None - действует пресет rusEFI
     "brightness": 100,
     "wifi": {"ssid": "", "password": "roundgauge"},
@@ -412,6 +437,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self.send_json({"ssid": w["ssid"] or "roundGauge-A1B2", "default_ssid": "roundGauge-A1B2",
                                        "custom_ssid": bool(w["ssid"]),
                                        "password_default": w["password"] == "roundgauge"})
+            if path == "/api/sound":
+                # active: у мока тревога по первому правилу идёт 5 с из каждых 10, пока звук не выключен
+                active = 1 if state["sound_mode"] != "off" and int(time.time()) % 10 < 5 else 0
+                return self.send_json({"mode": state["sound_mode"], "active": active, "muted": 0, "buzzer": bool(active)})
+            if path == "/api/sound/rules":
+                text = state["sound_rules"] if state["sound_rules"] is not None else load_default_alerts()
+                body = text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path == "/api/can":
                 return self.send_json(can_status_payload())
             if path == "/api/can/map":
@@ -572,6 +610,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not can_map_is_valid(text):
                     return self.send_text(400, "Invalid CAN map")
                 state["can_map"] = text
+                return self.send_json({"status": "success"})
+            if path == "/api/sound":
+                if not check_auth(self):
+                    return
+                body = self.read_body(128)
+                if body is None:
+                    return
+                try:
+                    mode = json.loads(body.decode("utf-8", "replace")).get("mode")
+                except ValueError:
+                    mode = None
+                if mode not in ("off", "alerts", "alerts_clicks"):
+                    return self.send_text(400, "Mode must be off, alerts or alerts_clicks")
+                state["sound_mode"] = mode
+                return self.send_json({"status": "success"})
+            if path == "/api/sound/rules":
+                if not check_auth(self):
+                    return
+                body = self.read_body(2048)
+                if body is None:
+                    return
+                text = body.decode("utf-8", "replace")
+                if not alerts_are_valid(text):
+                    return self.send_text(400, "Invalid alert rules")
+                state["sound_rules"] = text
+                return self.send_json({"status": "success"})
+            if path == "/api/sound/rules/reset":
+                if not check_auth(self):
+                    return
+                state["sound_rules"] = None
+                return self.send_json({"status": "success"})
+            if path == "/api/sound/test":
+                if not check_auth(self):
+                    return
                 return self.send_json({"status": "success"})
             if path == "/api/can/map/reset":
                 if not check_auth(self):

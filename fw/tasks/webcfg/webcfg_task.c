@@ -11,6 +11,8 @@
 #include "layout.h"
 #include "board.h"
 #include "imu_task.h"
+#include "alerts.h"
+#include "sound_task.h"
 #include "esp_heap_caps.h"
 #include "can_map.h"
 #include "can_task.h"
@@ -938,6 +940,114 @@ static esp_err_t wifi_post_handler(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// Звук: режим, правила тревог, пробный писк
+// ---------------------------------------------------------------------------
+
+static const char *const SOUND_MODES[] = { "off", "alerts", "alerts_clicks" };
+
+static esp_err_t sound_get_handler(httpd_req_t *req)
+{
+    roundGauge_sound_settings_t s;
+    roundGauge_settings_get_sound(&s);
+    roundGauge_sound_status_t st;
+    roundGauge_sound_get_status(&st);
+    char json[160];
+    snprintf(json, sizeof(json), "{\"mode\":\"%s\",\"active\":%u,\"muted\":%u,\"buzzer\":%s}",
+             SOUND_MODES[(int)s.mode <= 2 ? (int)s.mode : 0], (unsigned)st.active, (unsigned)st.muted,
+             st.buzzer_on ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t sound_post_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    char *body = recv_body(req, 128);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    const cJSON *m = root ? cJSON_GetObjectItemCaseSensitive(root, "mode") : NULL;
+    int mode = -1;
+    if (cJSON_IsString(m) && m->valuestring != NULL) {
+        for (int i = 0; i < 3; i++) {
+            if (strcmp(m->valuestring, SOUND_MODES[i]) == 0) {
+                mode = i;
+            }
+        }
+    }
+    cJSON_Delete(root);
+    if (mode < 0) {
+        return send_text_err(req, "400 Bad Request", "Mode must be off, alerts or alerts_clicks");
+    }
+    roundGauge_sound_settings_t s = { .mode = (roundGauge_sound_mode_t)mode };
+    if (roundGauge_settings_set_sound(&s) != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Save failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t sound_rules_get_handler(httpd_req_t *req)
+{
+    char *json = roundGauge_alerts_json_dup();
+    if (json == NULL) {
+        return send_text_err(req, "500 Internal Server Error", "No memory");
+    }
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t ret = httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    free(json);
+    return ret;
+}
+
+static esp_err_t sound_rules_post_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    char *body = recv_body(req, RG_ALERTS_JSON_MAX);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    esp_err_t err = roundGauge_alerts_apply_json(body);
+    free(body);
+    if (err == ESP_ERR_INVALID_ARG) {
+        return send_text_err(req, "400 Bad Request", "Invalid alert rules");
+    }
+    if (err != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Save failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t sound_rules_reset_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    if (roundGauge_alerts_reset() != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Reset failed");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t sound_test_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    roundGauge_sound_test();
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+// ---------------------------------------------------------------------------
 // Акселерометр: живые показания, калибровка, направление "вперёд"
 // ---------------------------------------------------------------------------
 
@@ -1027,7 +1137,7 @@ static void start_http_server(void)
     cfg.task_priority = RG_HTTPD_PRIORITY;
     cfg.core_id = RG_HTTPD_CORE;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 36;
+    cfg.max_uri_handlers = 44;
     cfg.recv_wait_timeout = 10;
 
     httpd_handle_t server = NULL;
@@ -1063,6 +1173,12 @@ static void start_http_server(void)
         {.uri = "/api/can/map", .method = HTTP_GET, .handler = can_map_get_handler},
         {.uri = "/api/can/map", .method = HTTP_POST, .handler = can_map_post_handler},
         {.uri = "/api/can/map/reset", .method = HTTP_POST, .handler = can_map_reset_handler},
+        {.uri = "/api/sound", .method = HTTP_GET, .handler = sound_get_handler},
+        {.uri = "/api/sound", .method = HTTP_POST, .handler = sound_post_handler},
+        {.uri = "/api/sound/rules", .method = HTTP_GET, .handler = sound_rules_get_handler},
+        {.uri = "/api/sound/rules", .method = HTTP_POST, .handler = sound_rules_post_handler},
+        {.uri = "/api/sound/rules/reset", .method = HTTP_POST, .handler = sound_rules_reset_handler},
+        {.uri = "/api/sound/test", .method = HTTP_POST, .handler = sound_test_handler},
         {.uri = "/api/can/frames", .method = HTTP_GET, .handler = can_frames_handler},
         {.uri = "/media/*", .method = HTTP_GET, .handler = media_get_handler},
         {.uri = "/*", .method = HTTP_GET, .handler = www_get_handler},

@@ -10,6 +10,12 @@ static const char *TAG = "SETTINGS";
 
 static roundGauge_settings_t s_cfg;
 
+static const char *const SOUND_MODE_NAMES[] = {
+    [RG_SOUND_OFF] = "off",
+    [RG_SOUND_ALERTS] = "alerts",
+    [RG_SOUND_ALERTS_CLICKS] = "alerts_clicks",
+};
+
 static const char *const CAN_MODE_NAMES[] = {
     [RG_CAN_MODE_LISTEN_ONLY] = "listen_only",
     [RG_CAN_MODE_NORMAL] = "normal",
@@ -84,6 +90,16 @@ static bool parse(const char *json, roundGauge_settings_t *out)
     get_u32(disp, "brightness", &br);
     out->display.brightness = (uint8_t)(br < RG_LCD_BL_MIN_PCT ? RG_LCD_BL_MIN_PCT : (br > 100 ? 100 : br));
 
+    const cJSON *snd = cJSON_GetObjectItemCaseSensitive(root, "sound");
+    const cJSON *sm = cJSON_GetObjectItemCaseSensitive(snd, "mode");
+    if (cJSON_IsString(sm) && sm->valuestring != NULL) {
+        for (int i = 0; i < (int)(sizeof(SOUND_MODE_NAMES) / sizeof(SOUND_MODE_NAMES[0])); i++) {
+            if (strcmp(sm->valuestring, SOUND_MODE_NAMES[i]) == 0) {
+                out->sound.mode = (roundGauge_sound_mode_t)i;
+            }
+        }
+    }
+
     const cJSON *imu = cJSON_GetObjectItemCaseSensitive(root, "imu");
     const cJSON *cal = cJSON_GetObjectItemCaseSensitive(imu, "calibrated");
     if (cJSON_IsBool(cal)) {
@@ -125,6 +141,9 @@ static char *serialize(const roundGauge_settings_t *cfg)
 
     cJSON *disp = cJSON_AddObjectToObject(root, "display");
     cJSON_AddNumberToObject(disp, "brightness", cfg->display.brightness);
+
+    cJSON *snd = cJSON_AddObjectToObject(root, "sound");
+    cJSON_AddStringToObject(snd, "mode", SOUND_MODE_NAMES[cfg->sound.mode]);
 
     cJSON *imu = cJSON_AddObjectToObject(root, "imu");
     cJSON_AddBoolToObject(imu, "calibrated", cfg->imu.calibrated);
@@ -201,6 +220,29 @@ esp_err_t roundGauge_settings_set_wifi(const roundGauge_wifi_ap_settings_t *w)
     if (err == ESP_OK) {
         portENTER_CRITICAL(&s_can_lock);
         s_cfg.wifi_ap = *w;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
+}
+
+void roundGauge_settings_get_sound(roundGauge_sound_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.sound;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+esp_err_t roundGauge_settings_set_sound(const roundGauge_sound_settings_t *s)
+{
+    if ((int)s->mode < 0 || (int)s->mode > (int)RG_SOUND_ALERTS_CLICKS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    roundGauge_settings_t next = s_cfg;
+    next.sound = *s;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.sound = *s;
         portEXIT_CRITICAL(&s_can_lock);
     }
     return err;

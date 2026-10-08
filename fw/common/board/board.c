@@ -99,9 +99,11 @@ static esp_err_t expander_init(void)
     ESP_RETURN_ON_ERROR(esp_io_expander_new_i2c_tca9554(s_i2c_bus, RG_I2C_ADDR_EXPANDER, &s_expander),
                         TAG, "tca9554");
 
-    // Только выводы, нужные экрану и тачу; остальные остаются входами, как после сброса.
+    // Выводы экрана и тача (высокий уровень), зуммер (низкий - молчит); остальные остаются входами, как после сброса.
     const uint32_t outputs = (1U << RG_EXIO_LCD_RST) | (1U << RG_EXIO_TP_RST) | (1U << RG_EXIO_LCD_CS);
-    ESP_RETURN_ON_ERROR(esp_io_expander_set_dir(s_expander, outputs, IO_EXPANDER_OUTPUT), TAG, "exio dir");
+    const uint32_t buzzer = 1U << RG_EXIO_BUZZER;
+    ESP_RETURN_ON_ERROR(esp_io_expander_set_dir(s_expander, outputs | buzzer, IO_EXPANDER_OUTPUT), TAG, "exio dir");
+    ESP_RETURN_ON_ERROR(esp_io_expander_set_level(s_expander, buzzer, 0), TAG, "buzzer off");
     return esp_io_expander_set_level(s_expander, outputs, 1);
 }
 
@@ -254,6 +256,14 @@ esp_lcd_panel_handle_t roundGauge_board_lcd_panel(void)
 esp_lcd_touch_handle_t roundGauge_board_touch(void)
 {
     return s_touch;
+}
+
+esp_err_t roundGauge_board_buzzer_set(bool on)
+{
+    if (s_expander == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return esp_io_expander_set_level(s_expander, 1U << RG_EXIO_BUZZER, on ? 1 : 0);
 }
 
 i2c_master_bus_handle_t roundGauge_board_i2c(void)

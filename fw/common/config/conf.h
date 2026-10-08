@@ -49,6 +49,18 @@
 #define RG_IMU_TASK_CORE 0
 #define RG_IMU_SIGNAL_TIMEOUT_MS 500
 
+// sound_task: зуммер (EXIO8 расширителя TCA9554), тревоги по правилам и клики кнопок (tasks/sound).
+#define RG_SOUND_TASK_STACK 3072
+#define RG_SOUND_TASK_PRIORITY 3
+#define RG_SOUND_TASK_CORE 0
+#define RG_SOUND_TICK_MS 10
+#define RG_SOUND_CLICK_MS 25  // писк при нажатии кнопки, режим "тревоги + клики"
+#define RG_SOUND_TEST_MS 300  // пробный писк со страницы "Звук"
+
+// Правила тревог: JSON одним blob'ом (common/config/alerts.h).
+#define RG_ALERTS_NVS_KEY "alerts"
+#define RG_ALERTS_JSON_MAX 2048
+
 // webcfg_task: подъём точки доступа и HTTP-сервера по запросу.
 #define RG_WEBCFG_TASK_STACK 4096
 #define RG_WEBCFG_TASK_PRIORITY 2
