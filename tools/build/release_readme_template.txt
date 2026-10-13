@@ -49,6 +49,7 @@ Pages
   /can.html     CAN speed and mode, signal mapping table, frame sniffer
   /imu.html     accelerometer: live g-force dot, calibration, forward direction
   /sound.html   buzzer: mode (off / alerts / alerts + clicks), alert rules, test beep
+  /logs.html    logging to a microSD card: start conditions, file list, download, delete
   /ota          firmware and web interface update
                 (roundGauge_firmware_*.bin and roundGauge_www_*.bin)
 

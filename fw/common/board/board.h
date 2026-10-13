@@ -114,6 +114,8 @@ extern "C" {
 // Прочее
 // ------------------------------------------------------------------
 #define RG_PIN_SD_MISO GPIO_NUM_42 /* MOSI/SCK — общие с RG_PIN_LCD_SPI_* */
+#define RG_PIN_SD_MOSI RG_PIN_LCD_SPI_SDA
+#define RG_PIN_SD_SCK RG_PIN_LCD_SPI_SCL
 #define RG_PIN_BAT_ADC GPIO_NUM_4
 
 // Инициализация кнопок, I2C, TCA9554, экрана и тача. Подсветка после неё
@@ -139,6 +141,19 @@ esp_err_t roundGauge_board_backlight_set(uint8_t pct);
 // Зуммер на выводе EXIO8 расширителя TCA9554: включить или выключить (простое включение, тонов нет;
 // звучит ли непрерывно или нужны импульсы - зависит от зуммера: активный пищит сам).
 esp_err_t roundGauge_board_buzzer_set(bool on);
+
+// microSD в режиме SPI (SPI2). MOSI и SCK общие с 3-wire SPI экрана: он нужен только на старте и пока его CS
+// (EXIO3) высокий, не реагирует на обмен с картой. CS карты - на расширителе (EXIO4), не на GPIO: пока карта
+// смонтирована, вывод держится низким. Вызывать из одной задачи (logger_task): монтирование и размонтирование
+// между собой не синхронизируются. Нужна FAT32-карта.
+esp_err_t roundGauge_board_sd_mount(const char *mount_path);
+void roundGauge_board_sd_unmount(void);
+
+// Отвечает ли смонтированная карта (CMD13). false - карту вынули или она не смонтирована.
+bool roundGauge_board_sd_present(void);
+
+// Размер и свободное место файловой системы, КБ.
+esp_err_t roundGauge_board_sd_space(uint64_t *total_kb, uint64_t *free_kb);
 
 #ifdef __cplusplus
 }

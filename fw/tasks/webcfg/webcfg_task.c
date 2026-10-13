@@ -5,6 +5,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <strings.h>
+#include <unistd.h>
 #include "conf.h"
 #include "settings.h"
 #include "auth.h"
@@ -13,6 +16,7 @@
 #include "imu_task.h"
 #include "alerts.h"
 #include "sound_task.h"
+#include "logger_task.h"
 #include "esp_heap_caps.h"
 #include "can_map.h"
 #include "can_task.h"
@@ -1048,6 +1052,329 @@ static esp_err_t sound_test_handler(httpd_req_t *req)
 }
 
 // ---------------------------------------------------------------------------
+// Логи на SD: состояние и условия старта, файлы (список, скачивание, удаление)
+// ---------------------------------------------------------------------------
+
+static const char *const LOG_MODES[] = { "manual", "boot", "condition" };
+static const char *const LOG_STATES[] = { "no_card", "idle", "recording" };
+static const char *const LOG_ERRORS[] = { "", "mount", "open", "write", "full", "no_signals" };
+
+static esp_err_t send_json_ok(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t log_get_handler(httpd_req_t *req)
+{
+    roundGauge_log_status_t st;
+    roundGauge_logger_get_status(&st);
+    roundGauge_log_settings_t cfg;
+    roundGauge_settings_get_log(&cfg);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "state", LOG_STATES[(int)st.state <= 2 ? (int)st.state : 0]);
+    cJSON_AddStringToObject(root, "error", LOG_ERRORS[(int)st.error <= 5 ? (int)st.error : 0]);
+    cJSON_AddStringToObject(root, "file", st.file);
+    cJSON_AddNumberToObject(root, "records", st.records);
+    cJSON_AddNumberToObject(root, "bytes", st.bytes);
+    cJSON_AddNumberToObject(root, "seconds", st.seconds);
+    cJSON_AddNumberToObject(root, "total_kb", (double)st.total_kb);
+    cJSON_AddNumberToObject(root, "free_kb", (double)st.free_kb);
+    cJSON_AddStringToObject(root, "mode", LOG_MODES[(int)cfg.mode <= 2 ? (int)cfg.mode : 0]);
+    cJSON_AddStringToObject(root, "signal", cfg.signal);
+    cJSON_AddStringToObject(root, "op", cfg.less ? "<" : ">");
+    cJSON_AddNumberToObject(root, "value", cfg.value);
+    cJSON_AddNumberToObject(root, "stop_delay", cfg.stop_delay);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        return send_text_err(req, "500 Internal Server Error", "No memory");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t ret = httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    cJSON_free(json);
+    return ret;
+}
+
+// Поля, которых нет в запросе, остаются прежними.
+static esp_err_t log_post_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    char *body = recv_body(req, 256);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    if (root == NULL) {
+        return send_text_err(req, "400 Bad Request", "Bad JSON");
+    }
+    roundGauge_log_settings_t cfg;
+    roundGauge_settings_get_log(&cfg);
+
+    const cJSON *m = cJSON_GetObjectItemCaseSensitive(root, "mode");
+    if (cJSON_IsString(m) && m->valuestring != NULL) {
+        int mode = -1;
+        for (int i = 0; i < 3; i++) {
+            if (strcmp(m->valuestring, LOG_MODES[i]) == 0) {
+                mode = i;
+            }
+        }
+        if (mode < 0) {
+            cJSON_Delete(root);
+            return send_text_err(req, "400 Bad Request", "Mode must be manual, boot or condition");
+        }
+        cfg.mode = (roundGauge_log_mode_t)mode;
+    }
+    const cJSON *sg = cJSON_GetObjectItemCaseSensitive(root, "signal");
+    if (cJSON_IsString(sg) && sg->valuestring != NULL) {
+        if (strlen(sg->valuestring) > RG_LOG_SIGNAL_MAX_LEN) {
+            cJSON_Delete(root);
+            return send_text_err(req, "400 Bad Request", "Signal name too long");
+        }
+        strlcpy(cfg.signal, sg->valuestring, sizeof(cfg.signal));
+    }
+    const cJSON *op = cJSON_GetObjectItemCaseSensitive(root, "op");
+    if (cJSON_IsString(op) && op->valuestring != NULL) {
+        cfg.less = strcmp(op->valuestring, "<") == 0;
+    }
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(root, "value");
+    if (cJSON_IsNumber(v)) {
+        cfg.value = (float)v->valuedouble;
+    }
+    const cJSON *d = cJSON_GetObjectItemCaseSensitive(root, "stop_delay");
+    if (cJSON_IsNumber(d)) {
+        if (d->valuedouble < 0 || d->valuedouble > 3600) {
+            cJSON_Delete(root);
+            return send_text_err(req, "400 Bad Request", "stop_delay must be 0..3600");
+        }
+        cfg.stop_delay = (uint16_t)d->valuedouble;
+    }
+    cJSON_Delete(root);
+
+    // Сигнал условия должен быть в раскладке: иначе под него завелась бы лишняя запись в таблице сигналов.
+    if (cfg.mode == RG_LOG_CONDITION) {
+        roundGauge_layout_t *layout = heap_caps_malloc(sizeof(*layout), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (layout == NULL) {
+            return send_text_err(req, "500 Internal Server Error", "No memory");
+        }
+        roundGauge_layout_copy(layout);
+        const bool known = roundGauge_layout_find_signal(layout, cfg.signal) != NULL;
+        free(layout);
+        if (!known) {
+            return send_text_err(req, "400 Bad Request", "Condition signal is not in the layout");
+        }
+    }
+    if (roundGauge_settings_set_log(&cfg) != ESP_OK) {
+        return send_text_err(req, "500 Internal Server Error", "Save failed");
+    }
+    return send_json_ok(req);
+}
+
+static esp_err_t log_start_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    roundGauge_logger_request_start();
+    return send_json_ok(req);
+}
+
+static esp_err_t log_stop_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    roundGauge_logger_request_stop();
+    return send_json_ok(req);
+}
+
+static esp_err_t log_rescan_handler(httpd_req_t *req)
+{
+    roundGauge_logger_request_rescan();
+    return send_json_ok(req);
+}
+
+// Страница присылает время браузера: у платы нет часов с питанием, а время нужно файлам (дата в списке и
+// метка в заголовке лога). Открытый запрос: без него не отметятся и файлы, пока не введён пароль.
+static esp_err_t log_time_handler(httpd_req_t *req)
+{
+    char *body = recv_body(req, 64);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+    cJSON *root = cJSON_Parse(body);
+    free(body);
+    const cJSON *u = root ? cJSON_GetObjectItemCaseSensitive(root, "unix") : NULL;
+    const bool ok = cJSON_IsNumber(u) && u->valuedouble > 1700000000.0 && u->valuedouble < 4100000000.0;
+    if (ok) {
+        struct timeval tv = { .tv_sec = (time_t)u->valuedouble, .tv_usec = 0 };
+        settimeofday(&tv, NULL);
+    }
+    cJSON_Delete(root);
+    if (!ok) {
+        return send_text_err(req, "400 Bad Request", "Bad time");
+    }
+    return send_json_ok(req);
+}
+
+static int name_cmp_desc(const void *a, const void *b)
+{
+    return strcmp(*(const char *const *)b, *(const char *const *)a);
+}
+
+static esp_err_t log_files_handler(httpd_req_t *req)
+{
+    const char *root_dir = roundGauge_logger_root();
+    if (root_dir == NULL) {
+        return send_text_err(req, "409 Conflict", "No SD card");
+    }
+    DIR *d = opendir(root_dir);
+    if (d == NULL) {
+        roundGauge_logger_card_lost();
+        return send_text_err(req, "409 Conflict", "SD card not readable");
+    }
+    // Сначала имена (новые первыми), потом размеры и даты: stat на каждый файл - обращение к карте.
+    enum { MAX_FILES = 200 };
+    char (*names)[16] = malloc(sizeof(*names) * MAX_FILES);
+    const char **order = malloc(sizeof(*order) * MAX_FILES);
+    if (names == NULL || order == NULL) {
+        free(names);
+        free(order);
+        closedir(d);
+        return send_text_err(req, "500 Internal Server Error", "No memory");
+    }
+    int n = 0;
+    struct dirent *e;
+    while (n < MAX_FILES && (e = readdir(d)) != NULL) {
+        if (roundGauge_logger_valid_name(e->d_name)) {
+            strlcpy(names[n], e->d_name, sizeof(names[n]));
+            order[n] = names[n];
+            n++;
+        }
+    }
+    closedir(d);
+    qsort(order, n, sizeof(order[0]), name_cmp_desc);
+
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < n; i++) {
+        char path[48];
+        snprintf(path, sizeof(path), "%s/%s", root_dir, order[i]);
+        struct stat sb;
+        if (stat(path, &sb) != 0) {
+            continue;
+        }
+        cJSON *o = cJSON_CreateObject();
+        char lower[16];
+        strlcpy(lower, order[i], sizeof(lower));
+        for (char *c = lower; *c; c++) {
+            if (*c >= 'A' && *c <= 'Z') {
+                *c = (char)(*c - 'A' + 'a');
+            }
+        }
+        cJSON_AddStringToObject(o, "name", lower);
+        cJSON_AddNumberToObject(o, "size", (double)sb.st_size);
+        cJSON_AddNumberToObject(o, "time", (double)sb.st_mtime);
+        cJSON_AddItemToArray(arr, o);
+    }
+    free(names);
+    free(order);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "files", arr);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        return send_text_err(req, "500 Internal Server Error", "No memory");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t ret = httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    cJSON_free(json);
+    return ret;
+}
+
+// GET /log/log_0001.mlg - скачать как файл.
+static esp_err_t log_download_handler(httpd_req_t *req)
+{
+    const char *root_dir = roundGauge_logger_root();
+    const char *name = req->uri + strlen("/log/");
+    char clean[16];
+    size_t n = strcspn(name, "?#");
+    if (root_dir == NULL) {
+        return send_text_err(req, "409 Conflict", "No SD card");
+    }
+    if (n == 0 || n >= sizeof(clean)) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
+    }
+    memcpy(clean, name, n);
+    clean[n] = '\0';
+    if (!roundGauge_logger_valid_name(clean)) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
+    }
+    char path[48];
+    snprintf(path, sizeof(path), "%s/%s", root_dir, clean);
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
+    }
+    char *buf = malloc(2048);
+    if (buf == NULL) {
+        fclose(f);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
+    }
+    char disp[64];
+    snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", clean);
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_set_hdr(req, "Content-Disposition", disp);
+    esp_err_t ret = ESP_OK;
+    size_t r;
+    while ((r = fread(buf, 1, 2048, f)) > 0) {
+        if (httpd_resp_send_chunk(req, buf, r) != ESP_OK) {
+            ret = ESP_FAIL;
+            break;
+        }
+    }
+    free(buf);
+    fclose(f);
+    if (ret == ESP_OK) {
+        httpd_resp_send_chunk(req, NULL, 0);
+    }
+    return ret;
+}
+
+static esp_err_t log_delete_handler(httpd_req_t *req)
+{
+    if (!check_auth(req)) {
+        return ESP_OK;
+    }
+    const char *root_dir = roundGauge_logger_root();
+    char name[24];
+    char query[64];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "name", name, sizeof(name)) != ESP_OK || !roundGauge_logger_valid_name(name)) {
+        return send_text_err(req, "400 Bad Request", "Bad file name");
+    }
+    if (root_dir == NULL) {
+        return send_text_err(req, "409 Conflict", "No SD card");
+    }
+    roundGauge_log_status_t st;
+    roundGauge_logger_get_status(&st);
+    if (st.state == RG_LOG_RECORDING && strcasecmp(st.file, name) == 0) {
+        return send_text_err(req, "409 Conflict", "File is being recorded");
+    }
+    char path[48];
+    snprintf(path, sizeof(path), "%s/%s", root_dir, name);
+    if (unlink(path) != 0) {
+        return send_text_err(req, "404 Not Found", "File not found");
+    }
+    return send_json_ok(req);
+}
+
+// ---------------------------------------------------------------------------
 // Акселерометр: живые показания, калибровка, направление "вперёд"
 // ---------------------------------------------------------------------------
 
@@ -1137,7 +1464,7 @@ static void start_http_server(void)
     cfg.task_priority = RG_HTTPD_PRIORITY;
     cfg.core_id = RG_HTTPD_CORE;
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 44;
+    cfg.max_uri_handlers = 56;
     cfg.recv_wait_timeout = 10;
 
     httpd_handle_t server = NULL;
@@ -1180,6 +1507,15 @@ static void start_http_server(void)
         {.uri = "/api/sound/rules/reset", .method = HTTP_POST, .handler = sound_rules_reset_handler},
         {.uri = "/api/sound/test", .method = HTTP_POST, .handler = sound_test_handler},
         {.uri = "/api/can/frames", .method = HTTP_GET, .handler = can_frames_handler},
+        {.uri = "/api/log", .method = HTTP_GET, .handler = log_get_handler},
+        {.uri = "/api/log", .method = HTTP_POST, .handler = log_post_handler},
+        {.uri = "/api/log/start", .method = HTTP_POST, .handler = log_start_handler},
+        {.uri = "/api/log/stop", .method = HTTP_POST, .handler = log_stop_handler},
+        {.uri = "/api/log/rescan", .method = HTTP_POST, .handler = log_rescan_handler},
+        {.uri = "/api/log/time", .method = HTTP_POST, .handler = log_time_handler},
+        {.uri = "/api/log/files", .method = HTTP_GET, .handler = log_files_handler},
+        {.uri = "/api/log/delete", .method = HTTP_POST, .handler = log_delete_handler},
+        {.uri = "/log/*", .method = HTTP_GET, .handler = log_download_handler},
         {.uri = "/media/*", .method = HTTP_GET, .handler = media_get_handler},
         {.uri = "/*", .method = HTTP_GET, .handler = www_get_handler},
     };

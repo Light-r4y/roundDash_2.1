@@ -16,6 +16,12 @@ static const char *const SOUND_MODE_NAMES[] = {
     [RG_SOUND_ALERTS_CLICKS] = "alerts_clicks",
 };
 
+static const char *const LOG_MODE_NAMES[] = {
+    [RG_LOG_MANUAL] = "manual",
+    [RG_LOG_BOOT] = "boot",
+    [RG_LOG_CONDITION] = "condition",
+};
+
 static const char *const CAN_MODE_NAMES[] = {
     [RG_CAN_MODE_LISTEN_ONLY] = "listen_only",
     [RG_CAN_MODE_NORMAL] = "normal",
@@ -26,6 +32,10 @@ void roundGauge_settings_defaults(roundGauge_settings_t *out)
     memset(out, 0, sizeof(*out));
     out->version = RG_SETTINGS_VERSION;
     out->display.brightness = RG_LCD_BL_DEFAULT_PCT;
+    out->log.mode = RG_LOG_MANUAL;
+    strlcpy(out->log.signal, "rpm", sizeof(out->log.signal));
+    out->log.value = 500.0f;
+    out->log.stop_delay = 10;
     out->imu.g0[2] = 1.0f; // не откалибровано: плата лежит ровно
     out->can.bitrate = RG_CAN_BITRATE_DEFAULT;
     out->can.mode = RG_CAN_LISTEN_ONLY_DEFAULT ? RG_CAN_MODE_LISTEN_ONLY : RG_CAN_MODE_NORMAL;
@@ -100,6 +110,28 @@ static bool parse(const char *json, roundGauge_settings_t *out)
         }
     }
 
+    const cJSON *lg = cJSON_GetObjectItemCaseSensitive(root, "log");
+    const cJSON *lm = cJSON_GetObjectItemCaseSensitive(lg, "mode");
+    if (cJSON_IsString(lm) && lm->valuestring != NULL) {
+        for (int i = 0; i < (int)(sizeof(LOG_MODE_NAMES) / sizeof(LOG_MODE_NAMES[0])); i++) {
+            if (strcmp(lm->valuestring, LOG_MODE_NAMES[i]) == 0) {
+                out->log.mode = (roundGauge_log_mode_t)i;
+            }
+        }
+    }
+    get_str(lg, "signal", out->log.signal, sizeof(out->log.signal));
+    const cJSON *lop = cJSON_GetObjectItemCaseSensitive(lg, "op");
+    if (cJSON_IsString(lop) && lop->valuestring != NULL) {
+        out->log.less = strcmp(lop->valuestring, "<") == 0;
+    }
+    const cJSON *lv = cJSON_GetObjectItemCaseSensitive(lg, "value");
+    if (cJSON_IsNumber(lv)) {
+        out->log.value = (float)lv->valuedouble;
+    }
+    uint32_t ld = out->log.stop_delay;
+    get_u32(lg, "stop_delay", &ld);
+    out->log.stop_delay = (uint16_t)(ld > 3600 ? 3600 : ld);
+
     const cJSON *imu = cJSON_GetObjectItemCaseSensitive(root, "imu");
     const cJSON *cal = cJSON_GetObjectItemCaseSensitive(imu, "calibrated");
     if (cJSON_IsBool(cal)) {
@@ -144,6 +176,13 @@ static char *serialize(const roundGauge_settings_t *cfg)
 
     cJSON *snd = cJSON_AddObjectToObject(root, "sound");
     cJSON_AddStringToObject(snd, "mode", SOUND_MODE_NAMES[cfg->sound.mode]);
+
+    cJSON *lg = cJSON_AddObjectToObject(root, "log");
+    cJSON_AddStringToObject(lg, "mode", LOG_MODE_NAMES[cfg->log.mode]);
+    cJSON_AddStringToObject(lg, "signal", cfg->log.signal);
+    cJSON_AddStringToObject(lg, "op", cfg->log.less ? "<" : ">");
+    cJSON_AddNumberToObject(lg, "value", cfg->log.value);
+    cJSON_AddNumberToObject(lg, "stop_delay", cfg->log.stop_delay);
 
     cJSON *imu = cJSON_AddObjectToObject(root, "imu");
     cJSON_AddBoolToObject(imu, "calibrated", cfg->imu.calibrated);
@@ -243,6 +282,30 @@ esp_err_t roundGauge_settings_set_sound(const roundGauge_sound_settings_t *s)
     if (err == ESP_OK) {
         portENTER_CRITICAL(&s_can_lock);
         s_cfg.sound = *s;
+        portEXIT_CRITICAL(&s_can_lock);
+    }
+    return err;
+}
+
+void roundGauge_settings_get_log(roundGauge_log_settings_t *out)
+{
+    portENTER_CRITICAL(&s_can_lock);
+    *out = s_cfg.log;
+    portEXIT_CRITICAL(&s_can_lock);
+}
+
+esp_err_t roundGauge_settings_set_log(const roundGauge_log_settings_t *l)
+{
+    if ((int)l->mode < 0 || (int)l->mode > (int)RG_LOG_CONDITION || l->stop_delay > 3600 ||
+        memchr(l->signal, '\0', sizeof(l->signal)) == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    roundGauge_settings_t next = s_cfg;
+    next.log = *l;
+    esp_err_t err = roundGauge_settings_save(&next);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_can_lock);
+        s_cfg.log = *l;
         portEXIT_CRITICAL(&s_can_lock);
     }
     return err;

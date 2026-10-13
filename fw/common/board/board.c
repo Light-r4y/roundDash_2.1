@@ -1,6 +1,8 @@
 #include "board.h"
 #include "driver/i2c_master.h"
 #include "driver/ledc.h"
+#include "driver/sdspi_host.h"
+#include "driver/spi_common.h"
 #include "esp_check.h"
 #include "esp_io_expander_tca9554.h"
 #include "esp_lcd_panel_io.h"
@@ -10,6 +12,9 @@
 #include "esp_lcd_st7701.h"
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_log.h"
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "st7701_init.h"
@@ -22,6 +27,8 @@ static i2c_master_bus_handle_t s_i2c_bus;
 static esp_io_expander_handle_t s_expander;
 static esp_lcd_panel_handle_t s_lcd_panel;
 static esp_lcd_touch_handle_t s_touch;
+static sdmmc_card_t *s_sd_card;
+static char s_sd_path[16];
 
 // ------------------------------------------------------------------
 // Параметры панели. Тайминги, частота PCLK и размер bounce-буфера — из
@@ -279,4 +286,90 @@ esp_err_t roundGauge_board_backlight_set(uint8_t pct)
     uint32_t duty = (uint32_t)BL_LEDC_DUTY_MAX * pct / 100;
     ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, BL_LEDC_CHANNEL, duty), TAG, "bl duty");
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, BL_LEDC_CHANNEL);
+}
+
+// ------------------------------------------------------------------
+// microSD
+// ------------------------------------------------------------------
+
+#define SD_HOST SPI2_HOST
+#define SD_FREQ_KHZ 20000
+
+esp_err_t roundGauge_board_sd_mount(const char *mount_path)
+{
+    if (s_sd_card != NULL) {
+        return ESP_OK;
+    }
+    if (s_expander == NULL || strlen(mount_path) >= sizeof(s_sd_path)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    // CS карты - низкий на всё время работы; до этого вывод вход, подтяжка платы держит карту невыбранной.
+    ESP_RETURN_ON_ERROR(esp_io_expander_set_dir(s_expander, 1U << RG_EXIO_SD_CS, IO_EXPANDER_OUTPUT), TAG, "sd cs dir");
+    ESP_RETURN_ON_ERROR(esp_io_expander_set_level(s_expander, 1U << RG_EXIO_SD_CS, 0), TAG, "sd cs low");
+
+    const spi_bus_config_t bus = {
+        .mosi_io_num = RG_PIN_SD_MOSI,
+        .miso_io_num = RG_PIN_SD_MISO,
+        .sclk_io_num = RG_PIN_SD_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    esp_err_t err = spi_bus_initialize(SD_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        esp_io_expander_set_level(s_expander, 1U << RG_EXIO_SD_CS, 1);
+        return err;
+    }
+
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = SD_HOST;
+    host.max_freq_khz = SD_FREQ_KHZ;
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.gpio_cs = GPIO_NUM_NC;
+    slot.host_id = SD_HOST;
+    const esp_vfs_fat_mount_config_t mount = {
+        .format_if_mount_failed = false, // чужую карту не форматируем
+        .max_files = 4,
+        .allocation_unit_size = 16 * 1024,
+    };
+    err = esp_vfs_fat_sdspi_mount(mount_path, &host, &slot, &mount, &s_sd_card);
+    if (err != ESP_OK) {
+        s_sd_card = NULL;
+        spi_bus_free(SD_HOST);
+        esp_io_expander_set_level(s_expander, 1U << RG_EXIO_SD_CS, 1);
+        return err;
+    }
+    strlcpy(s_sd_path, mount_path, sizeof(s_sd_path));
+    ESP_LOGI(TAG, "SD mounted: %s, %llu MB", s_sd_card->cid.name,
+             (unsigned long long)s_sd_card->csd.capacity * s_sd_card->csd.sector_size / (1024 * 1024));
+    return ESP_OK;
+}
+
+void roundGauge_board_sd_unmount(void)
+{
+    if (s_sd_card == NULL) {
+        return;
+    }
+    esp_vfs_fat_sdcard_unmount(s_sd_path, s_sd_card);
+    s_sd_card = NULL;
+    spi_bus_free(SD_HOST);
+    esp_io_expander_set_level(s_expander, 1U << RG_EXIO_SD_CS, 1);
+    ESP_LOGI(TAG, "SD unmounted");
+}
+
+bool roundGauge_board_sd_present(void)
+{
+    return s_sd_card != NULL && sdmmc_get_status(s_sd_card) == ESP_OK;
+}
+
+esp_err_t roundGauge_board_sd_space(uint64_t *total_kb, uint64_t *free_kb)
+{
+    if (s_sd_card == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint64_t total = 0, free_b = 0;
+    ESP_RETURN_ON_ERROR(esp_vfs_fat_info(s_sd_path, &total, &free_b), TAG, "fat info");
+    *total_kb = total / 1024;
+    *free_kb = free_b / 1024;
+    return ESP_OK;
 }

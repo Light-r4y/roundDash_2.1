@@ -17,6 +17,7 @@ function mainPage() {
         layout: null,   // сводка по /api/layout: { screens, signals }
         imu: null,      // /api/imu
         sound: null,    // /api/sound
+        log: null,      // /api/log
         brightness: null,
         brightTimer: null,
 
@@ -52,10 +53,11 @@ function mainPage() {
             }
             this.can = can;
             if (!once) return;
-            const [media, layout, display, imu, sound] = await Promise.all([
+            const [media, layout, display, imu, sound, log] = await Promise.all([
                 this.getJson('/api/media'), this.getJson('/api/layout'), this.getJson('/api/display'),
-                this.getJson('/api/imu'), this.getJson('/api/sound')]);
+                this.getJson('/api/imu'), this.getJson('/api/sound'), this.getJson('/api/log')]);
             this.sound = sound;
+            this.log = log;
             this.media = media;
             this.imu = imu;
             if (layout) {
@@ -75,6 +77,10 @@ function mainPage() {
         },
         subSound() {
             return this.sound ? this.t('snd_mode_' + this.sound.mode) : '';
+        },
+        subLog() {
+            if (!this.log) return '';
+            return this.t({ no_card: 'tile_log_off', idle: 'tile_log_idle', recording: 'tile_log_rec' }[this.log.state] || 'tile_log_off');
         },
         subImu() {
             if (!this.imu) return '';

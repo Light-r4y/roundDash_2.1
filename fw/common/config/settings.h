@@ -12,6 +12,7 @@
 //   "can":     { "bitrate": 500000, "mode": "listen_only", "demo": false },
 //   "display": { "brightness": 100 },
 //   "sound":   { "mode": "off" },
+//   "log":     { "mode": "manual", "signal": "rpm", "op": ">", "value": 500, "stop_delay": 10 },
 //   "imu":     { "calibrated": false, "g0": [0, 0, 1], "fwd": 0 },
 //   "wifi_ap": { "ssid": "", "password": "roundgauge" }
 // }
@@ -52,6 +53,20 @@ typedef struct {
     roundGauge_sound_mode_t mode;
 } roundGauge_sound_settings_t;
 
+typedef enum {
+    RG_LOG_MANUAL = 0, // пишет только по кнопке на странице "Логи"
+    RG_LOG_BOOT,       // начинает запись при включении, как только готова SD-карта
+    RG_LOG_CONDITION,  // пишет, пока условие по сигналу выполнено (и stop_delay секунд после)
+} roundGauge_log_mode_t;
+
+typedef struct {
+    roundGauge_log_mode_t mode;
+    char signal[RG_LOG_SIGNAL_MAX_LEN + 1]; // сигнал условия (режим condition)
+    bool less;                              // false: сигнал > value, true: сигнал < value
+    float value;
+    uint16_t stop_delay; // с: сколько условие должно быть невыполнено, чтобы запись остановилась
+} roundGauge_log_settings_t;
+
 typedef struct {
     bool calibrated;
     float g0[3];  // сила тяжести в осях платы при калибровке, g - направлена "вверх"
@@ -63,6 +78,7 @@ typedef struct {
     roundGauge_can_settings_t can;
     roundGauge_display_settings_t display;
     roundGauge_sound_settings_t sound;
+    roundGauge_log_settings_t log;
     roundGauge_imu_settings_t imu;
     roundGauge_wifi_ap_settings_t wifi_ap;
 } roundGauge_settings_t;
@@ -98,6 +114,10 @@ esp_err_t roundGauge_settings_set_display(const roundGauge_display_settings_t *d
 // Режим звука: применяется сразу.
 void roundGauge_settings_get_sound(roundGauge_sound_settings_t *out);
 esp_err_t roundGauge_settings_set_sound(const roundGauge_sound_settings_t *s);
+
+// Запись лога на SD (tasks/logger): условия старта, применяются сразу.
+void roundGauge_settings_get_log(roundGauge_log_settings_t *out);
+esp_err_t roundGauge_settings_set_log(const roundGauge_log_settings_t *l);
 
 // Заполняет структуру значениями по умолчанию.
 void roundGauge_settings_defaults(roundGauge_settings_t *out);

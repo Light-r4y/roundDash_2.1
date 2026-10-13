@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>roundGauge - Logs</title>
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+    <script defer src="/alpine.min.js"></script>
+    <script src="/theme.js"></script>
+    <script src="/i18n.js"></script>
+    <script src="/auth-client.js"></script>
+    <script src="/logs.js"></script>
+</head>
+
+<body>
+    <div x-data="logsPage()" x-effect="document.title = t('title_logs')">
+        <nav class="navbar navbar-dark">
+            <div class="container-fluid">
+                <a href="/" class="navbar-brand mb-0 h1 text-decoration-none">
+                    <i class="fas fa-gauge-high me-2"></i>roundGauge
+                </a>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/editor.html" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-sliders me-1"></i><span x-text="t('nav_editor')"></span>
+                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" :title="t('theme_toggle')"
+                        @click="toggleTheme()">
+                        <i class="fas" :class="theme === 'dark' ? 'fa-sun' : 'fa-moon'"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="toggleLang()"
+                        x-text="lang === 'ru' ? 'EN' : 'RU'"></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" x-show="authRequired"
+                        :title="authUnlocked ? t('auth_lock_tooltip') : t('auth_unlock_tooltip')"
+                        @click="toggleLockButton()">
+                        <i class="fas" :class="authUnlocked ? 'fa-lock-open' : 'fa-lock'"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Окно ввода пароля -->
+        <div x-show="showUnlockModal" x-transition class="unlock-overlay" @click.self="showUnlockModal = false">
+            <div class="unlock-modal">
+                <h6 class="mb-3"><i class="fas fa-lock me-2"></i><span x-text="t('auth_unlock_title')"></span></h6>
+                <input type="password" class="form-control form-control-sm mb-2" x-model="unlockPassword"
+                    :class="unlockError ? 'is-invalid' : ''" :placeholder="t('auth_unlock_password')"
+                    @input="unlockError = ''" @keyup.enter="submitUnlock()">
+                <div class="small text-fault mb-2" x-show="unlockError">
+                    <i class="fas fa-triangle-exclamation me-1"></i><span x-text="unlockError"></span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-accent" :disabled="unlockBusy || !unlockPassword"
+                        @click="submitUnlock()">
+                        <span x-text="unlockBusy ? t('checking') : t('auth_unlock_submit')"></span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="showUnlockModal = false"
+                        x-text="t('cancel')"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mt-3 mb-5" style="max-width:960px">
+            <div class="alert py-2" :class="'alert-' + messageType" x-show="message" x-text="message"></div>
+            <div class="small text-fault mb-2" x-show="controlsLocked()" x-text="t('auth_locked_hint')"></div>
+
+            <!-- Запись -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="mb-3"><i class="fas fa-circle-dot me-2"></i><span x-text="t('log_title')"></span></h6>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="badge" :class="stateBadge()" x-text="stateText()"></span>
+                        <span class="small text-muted" x-show="st.state === 'recording'" x-text="recordingText()"></span>
+                        <span class="small text-muted" x-show="st.state !== 'no_card' && st.total_kb"
+                            x-text="t('log_free') + ': ' + fmtKb(st.free_kb) + ' / ' + fmtKb(st.total_kb)"></span>
+                    </div>
+                    <div class="small text-fault mt-2" x-show="errorText()">
+                        <i class="fas fa-triangle-exclamation me-1"></i><span x-text="errorText()"></span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button type="button" class="btn btn-sm btn-accent"
+                            :disabled="busy || controlsLocked() || st.state === 'recording'" @click="startLog()">
+                            <i class="fas fa-play me-1"></i><span x-text="t('log_start')"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            :disabled="busy || controlsLocked() || st.state !== 'recording'" @click="stopLog()">
+                            <i class="fas fa-stop me-1"></i><span x-text="t('log_stop')"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            :disabled="busy || st.state === 'recording'" @click="rescan()">
+                            <i class="fas fa-rotate me-1"></i><span x-text="t('log_rescan')"></span>
+                        </button>
+                    </div>
+                    <div class="form-text mt-2" x-text="t('log_hint')"></div>
+                </div>
+            </div>
+
+            <!-- Когда писать -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        <h6 class="mb-0 me-auto"><i class="fas fa-sliders me-2"></i><span x-text="t('log_when')"></span></h6>
+                        <span class="badge bg-warning text-dark" x-show="dirty" x-text="t('ed_unsaved')"></span>
+                        <button type="button" class="btn btn-sm btn-accent"
+                            :disabled="busy || controlsLocked() || !dirty || cfgInvalid" @click="applyCfg()">
+                            <i class="fas fa-check me-1"></i><span x-text="t('can_apply')"></span>
+                        </button>
+                    </div>
+                    <div class="row g-2">
+                        <template x-for="m in modes" :key="m">
+                            <div class="col-12 col-md-4">
+                                <button type="button" class="btn btn-sm w-100 text-start lh-sm"
+                                    :class="cfg.mode === m ? 'btn-accent' : 'btn-outline-secondary'"
+                                    :disabled="busy || controlsLocked()" @click="setMode(m)">
+                                    <span class="fw-semibold" x-text="t('log_mode_' + m)"></span><br>
+                                    <small x-text="t('log_mode_' + m + '_hint')"></small>
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="row g-2 align-items-end mt-1" x-show="cfg.mode === 'condition'">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small" x-text="t('ed_signal')"></label>
+                            <select class="form-select form-select-sm" x-model="cfg.signal" @change="changed()">
+                                <template x-if="cfg.signal && !signals.includes(cfg.signal)">
+                                    <option :value="cfg.signal" selected x-text="cfg.signal + ' ⚠'"></option>
+                                </template>
+                                <template x-if="!cfg.signal">
+                                    <option value="" selected>-</option>
+                                </template>
+                                <template x-for="n in signals" :key="n">
+                                    <option :value="n" x-text="n" :selected="n === cfg.signal"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small" x-text="t('sound_op')"></label>
+                            <select class="form-select form-select-sm" x-model="cfg.op" @change="changed()">
+                                <option value=">" :selected="cfg.op === '>'" x-text="t('sound_op_gt')"></option>
+                                <option value="<" :selected="cfg.op === '<'" x-text="t('sound_op_lt')"></option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small" x-text="t('sound_value')"></label>
+                            <input type="number" step="any" class="form-control form-control-sm"
+                                :class="isNaN(cfg.value) ? 'map-err' : ''" :value="cfg.value" @input="num('value', $event)">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small" x-text="t('log_stop_delay')"></label>
+                            <input type="number" min="0" max="3600" step="1" class="form-control form-control-sm"
+                                :value="cfg.stop_delay" @input="num('stop_delay', $event)">
+                        </div>
+                        <div class="col-12 form-text" x-text="conditionText()"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Файлы -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <h6 class="mb-0 me-auto"><i class="fas fa-folder-open me-2"></i><span x-text="t('log_files')"></span>
+                            <span class="small text-muted" x-show="filesLoaded" x-text="'(' + files.length + ')'"></span></h6>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="st.state === 'no_card'"
+                            @click="loadFiles()"><i class="fas fa-rotate me-1"></i><span x-text="t('ed_reload')"></span></button>
+                    </div>
+                    <div class="small text-muted" x-show="st.state === 'no_card'" x-text="t('log_no_card_files')"></div>
+                    <div class="small text-muted" x-show="st.state !== 'no_card' && filesLoaded && !files.length"
+                        x-text="t('log_empty')"></div>
+                    <div class="table-responsive" x-show="files.length">
+                        <table class="table table-sm align-middle mb-0"
+                            style="--bs-table-bg:transparent;--bs-table-color:var(--rg-text);--bs-table-border-color:var(--rg-border)">
+                            <tbody>
+                                <template x-for="f in files" :key="f.name">
+                                    <tr>
+                                        <td class="font-monospace" x-text="f.name"></td>
+                                        <td class="text-muted small" x-text="fmtTime(f.time)"></td>
+                                        <td class="text-muted small text-end" x-text="fmtBytes(f.size)"></td>
+                                        <td class="text-end text-nowrap">
+                                            <span class="badge bg-danger me-1" x-show="isActive(f.name)"
+                                                x-text="t('log_recording_badge')"></span>
+                                            <a class="btn btn-sm btn-outline-secondary px-3" :href="'/log/' + f.name"
+                                                :title="t('log_download')"><i class="fas fa-download"></i></a>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary px-3"
+                                                :disabled="busy || controlsLocked() || isActive(f.name)"
+                                                :title="t('log_delete')" @click="removeFile(f.name)"><i
+                                                    class="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="form-text mt-2" x-text="t('log_files_hint')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

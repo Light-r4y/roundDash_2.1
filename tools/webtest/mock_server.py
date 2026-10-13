@@ -100,7 +100,7 @@ def load_default_can_map():
     return "".join(pieces).replace('\\"', '"')
 
 
-lock = threading.Lock()
+lock = threading.RLock()
 
 state = {
     "auth_password": "",
@@ -110,6 +110,8 @@ state = {
     "media": {},                # имя -> байты, как раздел media на плате
     "can_cfg": {"bitrate": 500000, "mode": "listen_only", "demo": False},
     "sound_mode": "off",
+    "log": {"cfg": {"mode": "manual", "signal": "rpm", "op": ">", "value": 500, "stop_delay": 10},
+            "card": True, "rec": None, "files": {}, "error": "", "last": "", "num": 1},
     "sound_rules": None,       # сохранённые правила тревог (str); None - встроенные
     "can_map": None,  # сохранённая таблица привязок (str); None - действует пресет rusEFI
     "brightness": 100,
@@ -117,6 +119,40 @@ state = {
     "imu": {"calibrated": False, "fwd": 0, "cal": "idle", "cal_t": 0.0, "detect": "idle", "detect_t": 0.0},
     "sniff_t": 0.0,             # когда веб последний раз опрашивал сниффер
 }
+
+
+def mock_mlg(seconds):
+    """Небольшой настоящий MLG (формат v1, 4 поля, 20 Гц): скачанный файл открывается в MegaLogViewer."""
+    import math
+    import struct
+    fields = [("rpm", "rpm", 0), ("coolant", "C", 0), ("afr", "", 1), ("g_lon", "g", 2)]
+    info = b"roundGauge mock\0"
+    data_begin = 22 + 55 * len(fields) + len(info)
+    out = bytearray(b"MLVLG\0" + struct.pack(">HIHIHH", 1, int(time.time()), 22 + 55 * len(fields), data_begin,
+                                              4 * len(fields), len(fields)))
+    for name, units, digits in fields:
+        out += struct.pack(">B34s10sBffb", 7, name.encode(), units.encode(), 0, 1.0, 0.0, digits)
+    out += info
+    for i in range(int(seconds * 20)):
+        t = i * 0.05
+        vals = [800 + 3000 * (0.5 + 0.5 * math.sin(t * 0.6)), 80 + 10 * math.sin(t * 0.1),
+                14.7 + 2 * math.sin(t * 0.8), 0.5 * math.sin(t * 1.3)]
+        body = struct.pack(">4f", *vals)
+        out += struct.pack(">BBH", 0, i & 255, int(t * 100000) & 0xFFFF) + body + bytes([sum(body) & 255])
+    return bytes(out)
+
+
+LOG_NAME_RE = re.compile(r"^log_[0-9]{4}\.mlg$")
+
+
+def log_finish():
+    """Закончить запись: сохранить файл в "карту" (вызывать под lock)."""
+    lg = state["log"]
+    if lg["rec"] is None:
+        return
+    name, started = lg["rec"]
+    lg["files"][name] = (mock_mlg(max(2, time.time() - started)), int(time.time()))
+    lg["rec"] = None
 
 
 def layout_is_valid(text):
@@ -304,6 +340,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         if path.startswith("/media/"):
             return self.serve_media(path[len("/media/"):])
+        if path.startswith("/log/"):
+            name = path[len("/log/"):]
+            with lock:
+                lg = state["log"]
+                entry = lg["files"].get(name)
+                if entry is None and lg["rec"] and lg["rec"][0] == name:
+                    entry = (mock_mlg(max(2, time.time() - lg["rec"][1])), 0)
+            if not LOG_NAME_RE.match(name) or entry is None:
+                return self.send_error(404)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", 'attachment; filename="%s"' % name)
+            self.send_header("Content-Length", str(len(entry[0])))
+            self.end_headers()
+            self.wfile.write(entry[0])
+            return
         if path.startswith("/api/"):
             return self.handle_api_get(path)
         return super().do_GET()
@@ -437,6 +489,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self.send_json({"ssid": w["ssid"] or "roundGauge-A1B2", "default_ssid": "roundGauge-A1B2",
                                        "custom_ssid": bool(w["ssid"]),
                                        "password_default": w["password"] == "roundgauge"})
+            if path == "/api/log":
+                with lock:
+                    lg = state["log"]
+                    rec = lg["rec"]
+                    secs = int(time.time() - rec[1]) if rec else 0
+                    total = 15 * 1024 * 1024
+                    used = sum(len(v[0]) for v in lg["files"].values())
+                    out = {"state": "recording" if rec else ("idle" if lg["card"] else "no_card"),
+                           "error": lg["error"], "file": rec[0] if rec else lg["last"],
+                           "records": secs * 20, "bytes": 22 + secs * 20 * 21, "seconds": secs,
+                           "total_kb": total if lg["card"] else 0, "free_kb": (total - used) if lg["card"] else 0}
+                    out.update(lg["cfg"])
+                return self.send_json(out)
+            if path == "/api/log/files":
+                with lock:
+                    lg = state["log"]
+                    if not lg["card"]:
+                        return self.send_text(409, "No SD card")
+                    files = [{"name": n, "size": len(v[0]), "time": v[1]} for n, v in sorted(lg["files"].items(), reverse=True)]
+                    if lg["rec"]:
+                        files.insert(0, {"name": lg["rec"][0], "size": 22 + int(time.time() - lg["rec"][1]) * 420,
+                                         "time": int(lg["rec"][1])})
+                return self.send_json({"files": files})
             if path == "/api/sound":
                 # active: у мока тревога по первому правилу идёт 5 с из каждых 10, пока звук не выключен
                 active = 1 if state["sound_mode"] != "off" and int(time.time()) % 10 < 5 else 0
@@ -610,6 +685,80 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not can_map_is_valid(text):
                     return self.send_text(400, "Invalid CAN map")
                 state["can_map"] = text
+                return self.send_json({"status": "success"})
+            if path == "/api/log":
+                if not check_auth(self):
+                    return
+                body = self.read_body(256)
+                if body is None:
+                    return
+                try:
+                    req = json.loads(body.decode("utf-8", "replace"))
+                    assert isinstance(req, dict)
+                except (ValueError, AssertionError):
+                    return self.send_text(400, "Bad JSON")
+                with lock:
+                    cfg = dict(state["log"]["cfg"])
+                    if "mode" in req:
+                        if req["mode"] not in ("manual", "boot", "condition"):
+                            return self.send_text(400, "Mode must be manual, boot or condition")
+                        cfg["mode"] = req["mode"]
+                    if isinstance(req.get("signal"), str):
+                        if len(req["signal"]) > 15:
+                            return self.send_text(400, "Signal name too long")
+                        cfg["signal"] = req["signal"]
+                    if req.get("op") in (">", "<"):
+                        cfg["op"] = req["op"]
+                    if isinstance(req.get("value"), (int, float)):
+                        cfg["value"] = req["value"]
+                    if isinstance(req.get("stop_delay"), (int, float)):
+                        if not 0 <= req["stop_delay"] <= 3600:
+                            return self.send_text(400, "stop_delay must be 0..3600")
+                        cfg["stop_delay"] = int(req["stop_delay"])
+                    state["log"]["cfg"] = cfg
+                return self.send_json({"status": "success"})
+            if path == "/api/log/start":
+                if not check_auth(self):
+                    return
+                with lock:
+                    lg = state["log"]
+                    if not lg["card"]:
+                        lg["error"] = "mount"
+                    elif lg["rec"] is None:
+                        name = "log_%04d.mlg" % lg["num"]
+                        lg["num"] += 1
+                        lg["rec"] = (name, time.time())
+                        lg["last"] = name
+                        lg["error"] = ""
+                return self.send_json({"status": "success"})
+            if path == "/api/log/stop":
+                if not check_auth(self):
+                    return
+                with lock:
+                    log_finish()
+                return self.send_json({"status": "success"})
+            if path == "/api/log/rescan":
+                with lock:
+                    state["log"]["error"] = "" if state["log"]["card"] else "mount"
+                return self.send_json({"status": "success"})
+            if path == "/api/log/time":
+                body = self.read_body(64)
+                if body is None:
+                    return
+                return self.send_json({"status": "success"})
+            if path == "/api/log/delete":
+                if not check_auth(self):
+                    return
+                m = re.search(r"[?&]name=([^&]+)", self.path)
+                name = m.group(1) if m else ""
+                if not LOG_NAME_RE.match(name):
+                    return self.send_text(400, "Bad file name")
+                with lock:
+                    lg = state["log"]
+                    if lg["rec"] and lg["rec"][0] == name:
+                        return self.send_text(409, "File is being recorded")
+                    if lg["files"].pop(name, None) is None:
+                        return self.send_text(404, "File not found")
                 return self.send_json({"status": "success"})
             if path == "/api/sound":
                 if not check_auth(self):

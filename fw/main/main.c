@@ -22,6 +22,7 @@
 #include "imu_task.h"
 #include "alerts.h"
 #include "sound_task.h"
+#include "logger_task.h"
 #include "webcfg_task.h"
 
 // RG_LOG_LEVEL_STR задаётся в CMakeLists.txt: "INFO" при обычном "idf.py build",
@@ -73,6 +74,7 @@ void app_main(void)
     roundGauge_ui_task_start();      // Отрисовка, ядро 1 (вместе с задачей esp_lvgl_port)
     roundGauge_imu_task_start();     // Акселерометр, ядро 0
     roundGauge_sound_task_start();   // Зуммер: тревоги и клики, ядро 0
+    roundGauge_logger_task_start();  // Запись лога на SD, ядро 0
     roundGauge_touch_task_start();   // Свайпы по экрану, ядро 0
     roundGauge_can_task_start();     // Приём и разбор CAN, ядро 0
     roundGauge_webcfg_task_start();  // Точка доступа по запросу, ядро 0

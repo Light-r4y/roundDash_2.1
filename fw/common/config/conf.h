@@ -57,6 +57,22 @@
 #define RG_SOUND_CLICK_MS 25  // писк при нажатии кнопки, режим "тревоги + клики"
 #define RG_SOUND_TEST_MS 300  // пробный писк со страницы "Звук"
 
+// logger_task: запись сигналов раскладки на microSD в формате MegaLogViewer (tasks/logger).
+#define RG_LOGGER_TASK_STACK 8192
+#define RG_LOGGER_TASK_PRIORITY 2
+#define RG_LOGGER_TASK_CORE 0
+#define RG_LOGGER_PERIOD_MS 50          // 20 Гц
+#define RG_LOGGER_FLUSH_MS 1000         // как часто буфер уходит на карту
+#define RG_LOGGER_SYNC_MS 2000          // как часто данные сбрасываются из кэша FAT на карту (fsync)
+#define RG_LOGGER_BUF_BYTES 4096        // буфер записей в ОЗУ
+#define RG_LOGGER_MOUNT_DELAY_MS 3000   // после включения: ждём, пока экран закончит инициализацию
+#define RG_LOGGER_RETRY_MS 15000        // повтор поиска карты (режимы "при включении" и "по условию")
+#define RG_LOGGER_MIN_FREE_KB 4096      // меньше свободного места - запись останавливается
+#define RG_LOG_SIGNAL_MAX_LEN 15        // = длина имени сигнала в раскладке
+#define RG_LOG_MOUNT_PATH "/sdcard"
+#define RG_LOG_FILE_PREFIX "log_"       // log_0001.mlg: имя 8.3, длинные имена FAT не нужны
+#define RG_LOG_FILE_EXT ".mlg"
+
 // Правила тревог: JSON одним blob'ом (common/config/alerts.h).
 #define RG_ALERTS_NVS_KEY "alerts"
 #define RG_ALERTS_JSON_MAX 2048
